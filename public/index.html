@@ -44,7 +44,7 @@ var[fin,setFin]=_s(null);var[sts,setSts]=_s("");
 var[ph,setPh]=_s("idle");var[lpos,setLpos]=_s("bottom-center");
 var[usrs,setUsrs]=_s([]);var[logs,setLogs]=_s([]);
 var[sett,setSett]=_s({});var[drvSt,setDrvSt]=_s({});
-var cv=_r(null),fR=_r(null);
+var cv=_r(null),fR=_r(null),unR=_r(null),pwR=_r(null),npR=_r(null),suR=_r(null),spR=_r(null);
 
 var t=dk?{bg:"#0b0b14",bg2:"#141220",cd:"rgba(255,255,255,0.04)",tx:"#e0dcd4",t2:"#888",bd:"rgba(200,169,81,0.18)",g:"#c8a951",gl:"#e8d591",ip:"rgba(0,0,0,0.4)",ib:"rgba(200,169,81,0.2)",er:"#f88",ok:"#8b8"}:{bg:"#f7f5f0",bg2:"#edeae3",cd:"#fff",tx:"#2a2520",t2:"#777",bd:"#e0d5c5",g:"#b08c2a",gl:"#8a6d1b",ip:"#fff",ib:"#d5c9b5",er:"#c33",ok:"#2a8a2a"};
 
@@ -63,7 +63,6 @@ function lDrv(){api("/api/drive/status").then(setDrvSt).catch(function(){});}
 
 // FIRST-TIME SETUP
 if(vw==="setup"){
-  var suR=_r(),spR=_r();
   function doSetup(){setErr("");api("/api/auth/setup",{method:"POST",body:JSON.stringify({username:suR.current.value,password:spR.current.value})}).then(function(d){sessionStorage.setItem("jwt",d.token);setTk(d.token);setUsr({username:d.username,role:d.role});setVw("work");lCfg();}).catch(function(e){setErr(e.message);});}
   return h("div",{style:{minHeight:"100vh",background:"linear-gradient(135deg,"+t.bg+","+t.bg2+")",display:"flex",alignItems:"center",justifyContent:"center",padding:20}},
     h("div",{style:Object.assign({},sc2,{maxWidth:420,width:"100%",textAlign:"center",padding:32})},
@@ -81,7 +80,6 @@ if(vw==="setup"){
 
 // LOGIN
 if(vw==="login"){
-  var unR=_r(),pwR=_r();
   function doLogin(){setErr("");api("/api/auth/login",{method:"POST",body:JSON.stringify({username:unR.current.value,password:pwR.current.value})}).then(function(d){sessionStorage.setItem("jwt",d.token);setTk(d.token);}).catch(function(e){setErr(e.message);});}
   return h("div",{style:{minHeight:"100vh",background:"linear-gradient(135deg,"+t.bg+","+t.bg2+")",display:"flex",alignItems:"center",justifyContent:"center",padding:20}},
     h("div",{style:Object.assign({},sc2,{maxWidth:380,width:"100%",textAlign:"center",padding:32})},
@@ -99,7 +97,6 @@ if(vw==="login"){
 
 // CHANGE PASSWORD
 if(vw==="chpw"){
-  var npR=_r();
   return h("div",{style:{minHeight:"100vh",background:"linear-gradient(135deg,"+t.bg+","+t.bg2+")",display:"flex",alignItems:"center",justifyContent:"center",padding:20}},
     h("div",{style:Object.assign({},sc2,{maxWidth:400,width:"100%",textAlign:"center",padding:32})},
       h("div",{style:{fontSize:36}},"\uD83D\uDD10"),
