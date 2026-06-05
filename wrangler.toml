@@ -5,11 +5,11 @@ pages_build_output_dir = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "jewelry-agent-db"
-database_id = "REPLACE_AFTER_CREATION"
+database_id = "6aab796c-cef4-4589-8ab0-63350f30c7b6"
 
 [[r2_buckets]]
 binding = "STORAGE"
 bucket_name = "jewelry-agent-storage"
 
 [vars]
-JWT_SECRET = "CHANGE-THIS-TO-RANDOM-STRING"
+JWT_SECRET = "xK9mP2vL8qR4wN6jB3y"
