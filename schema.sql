@@ -1,4 +1,4 @@
--- Jewelry Marketing Agent — D1 Schema
+-- Jewelry Marketing Agent - D1 Schema (v6)
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -38,6 +38,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('tagline', 'Timeless Eleganc
 INSERT OR IGNORE INTO settings (key, value) VALUES ('logoPos', 'bottom-center');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('model', 'gpt-image-2');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('quality', 'medium');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('size', '1024x1024');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('style', 'luxury');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('openaiKey', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('driveClientId', '');
