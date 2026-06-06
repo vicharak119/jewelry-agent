@@ -69,7 +69,7 @@ column.)
 Upload the changed files to each instance's repo (same paths, same names):
 - `functions/api/[[path]].js`  (edit pipeline + public-settings keys)
 - `public/index.html`  (all UI changes)
-- `public/sw.js`  (cache bumped to `jw-v8`)
+- `public/sw.js`  (cache bumped to `jw-v8a`)
 
 There is **no `wrangler.toml`** in this package by design — don't add one back; keep bindings/secret
 in the dashboard.
