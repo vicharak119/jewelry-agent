@@ -48,6 +48,19 @@ function sf(id){return{
   ethnic:"Burgundy and gold silk fabric. Brass diya, ivory rose petals, brass box. Warm golden light."
 }[id]||"";}
 
+const DISPLAYS=[{id:"mannequin",n:"On mannequin / bust"},{id:"body",n:"On model (body part)"},{id:"props",n:"On themed props"}];
+const CODEPOS=[{id:"top-right",n:"Top Right"},{id:"top-left",n:"Top Left"},{id:"bottom-right",n:"Bottom Right"},{id:"bottom-left",n:"Bottom Left"}];
+function bodyPartFor(type){
+  type=(type||"").toLowerCase();
+  if(/neck|pendant|chain|choker|mangalsutra|haar|locket/.test(type))return "the neckline / d\u00e9colletage";
+  if(/brace|bangle|kada|kangan|wrist|cuff/.test(type))return "the wrist";
+  if(/ear|jhumk|stud|drop|hoop/.test(type))return "the ear";
+  if(/ring|finger/.test(type))return "the hand / finger";
+  if(/anklet|payal|toe/.test(type))return "the ankle / foot";
+  if(/nose|nath/.test(type))return "the nose";
+  if(/maang|tikka|head|matha|tiara/.test(type))return "the forehead / hairline";
+  return "the appropriate area";
+}
 function fmtIST(iso){
   if(!iso)return "-";
   var d=new Date(iso); if(isNaN(d.getTime()))return iso;
@@ -148,6 +161,8 @@ function App(){
   var[an,setAn]=useState(null);var[sc,setSc]=useState({d:"",b:"",p:"",m:""});
   var[fin,setFin]=useState(null);var[sts,setSts]=useState("");
   var[ph,setPh]=useState("idle");var[lpos,setLpos]=useState("bottom-center");
+  var[disp,setDisp]=useState("mannequin");var[promptText,setPromptText]=useState("");var[promptDirty,setPromptDirty]=useState(false);
+  var[pcode,setPcode]=useState("");var[pcodePos,setPcodePos]=useState("");
   var[usrs,setUsrs]=useState([]);var[logs,setLogs]=useState([]);var[auds,setAuds]=useState([]);
   var[sett,setSett]=useState({});var[drvSt,setDrvSt]=useState({});
   var cv=useRef(null),fR=useRef(null),unR=useRef(null),pwR=useRef(null),npR=useRef(null),suR=useRef(null),spR=useRef(null),seR=useRef(null),logoR=useRef(null);
@@ -172,6 +187,7 @@ function App(){
   },[tk]);
   useEffect(function(){if(!err)return;var id=setTimeout(function(){setErr("");},5000);return function(){clearTimeout(id);};},[err]);
   useEffect(function(){if(!msg)return;var id=setTimeout(function(){setMsg("");},5000);return function(){clearTimeout(id);};},[msg]);
+  useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt());},[ph,an,sc,disp,sty,ext,promptDirty]);
 
   if(vw==="setup"){
     function doSetup(){setErr("");api("/api/auth/setup",{method:"POST",body:JSON.stringify({username:suR.current.value,email:seR.current?seR.current.value:"",password:spR.current.value})}).then(function(d){sessionStorage.setItem("jwt",d.token);setTk(d.token);setUsr({username:d.username,role:d.role});setVw("work");lCfg();}).catch(function(e){setErr(e.message);});}
@@ -222,8 +238,8 @@ function App(){
   var isA=usr&&usr.role==="admin";
   var bsy=ph==="analyzing"||ph==="gen"||ph==="brand";
 
-  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setFin(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});}
-  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});if(fR.current)fR.current.value="";}
+  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setFin(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");}
+  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");if(fR.current)fR.current.value="";}
 
   function doAnalyze(){
     if(!imgF){setErr("Upload image first");return;}
@@ -236,46 +252,74 @@ function App(){
     }).catch(function(e){setErr(e.message);setPh("idle");});
   }
 
+  function qEta(){var q=cfg.quality||"medium";return q==="high"?"premium quality, usually ~60\u201390s":q==="low"?"draft quality, ~10\u201320s":"standard quality, ~30\u201360s";}
+  function buildPrompt(){
+    if(!an)return "";
+    var place=disp==="body"?("Show the piece being worn on "+bodyPartFor(an.type)+" of an elegant model \u2014 tasteful and natural, only the relevant body area in frame.")
+      :disp==="props"?"Arrange the piece elegantly on themed props that suit the style. No mannequin or body in frame."
+      :("Display the piece on a clean, neutral jewelry "+((sc.d&&sc.d.trim())||"bust / stand")+" appropriate to the item.");
+    return "Using the provided photograph as the EXACT subject, create a professional, ultra-realistic luxury jewelry marketing photo.\n\n"
+      +"CRITICAL \u2014 PRESERVE THE PRODUCT EXACTLY: the jewelry shown in the photo must stay identical \u2014 same design, stones, charms, beads, chain/link pattern, metal, colour and proportions. Do NOT redesign, restyle, add, remove, recolour, or rearrange any element. You may ONLY improve clarity, sharpness, focus and lighting on the piece itself.\n\n"
+      +"PLACEMENT: "+place+"\n"
+      +"SCENE: "+((sc.b&&sc.b.trim())||sf(sty))+". Props: "+((sc.p&&sc.p.trim())||"minimal, tasteful")+". Colour mood: "+((sc.m&&sc.m.trim())||"warm, premium")+".\n"
+      +"CAMERA & LIGHT: flattering angle, soft diffused studio lighting, shallow depth of field, the jewelry tack-sharp.\n"
+      +"COMPOSITION: keep the edges relatively clear. Do NOT add any text, watermark or logo into the image."
+      +(ext?("\nExtra: "+ext):"");
+  }
   function doGen(){
     if(!an){setErr("Analyze first");return;}
-    setErr("");setPh("gen");setSts("Generating... (30-60 sec)");
-    var a=an,ang=ANGS[Math.floor(Math.random()*ANGS.length)],lit=LITS[Math.floor(Math.random()*LITS.length)],seed=Math.floor(Math.random()*99999);
-    var pr="Ultra-realistic luxury jewelry product photography.\n\nJEWELRY (MUST MATCH EXACTLY): A "+a.type+" made of "+a.metal+". EXACT elements: "+a.elements+". Chain: "+(a.chain_type||"delicate")+". Style: "+a.style+".\n\nCRITICAL: Reproduce the jewelry design with EXACT fidelity - same number of charms/stones, same shapes, same placement, same chain pattern. Do NOT add, remove, or modify any design element.\n\nDISPLAY: On "+sc.d+".\nSETTING: "+sc.b+". Props: "+sc.p+". Colors: "+sc.m+".\n\nCAMERA: Shot "+ang+". "+lit+". Shallow depth of field, jewelry tack-sharp.\n\nCOMPOSITION: Leave space at the edges clear for a subtle brand bar. NO TEXT/WATERMARKS/LOGOS.\nVariation seed: "+seed+(ext?"\nExtra: "+ext:"");
+    var pr=(promptText&&promptText.trim())?promptText:buildPrompt();
+    setErr("");setPh("gen");setSts("Generating \u2014 "+qEta()+". Please keep this screen open.");
     api("/api/generate",{method:"POST",body:JSON.stringify({prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,inputFile:an.inputFile})}).then(function(d){
       var url=d.b64_json?"data:image/png;base64,"+d.b64_json:d.url;
       if(!url)throw new Error("No image returned");setPh("brand");setSts("Applying brand...");doBrand(url);
     }).catch(function(e){setErr(e.message);setPh("scene");});
   }
 
-  function drawText(ctx,bn,tg,pos,logoImg){
+  function drawText(ctx,bn,tg,pos,logoImg,W,H){
     if(pos==="none")return;
     var FF='"Noto Sans Devanagari", Georgia, serif';
-    var isB=pos.indexOf("bottom")===0;
-    var isL=pos.indexOf("left")>0,isR=pos.indexOf("right")>0,isC=!isL&&!isR;
-    var barH=78,pad=26,mg=28;
-    var gy0=isB?(1024-barH-pad):0;
-    var g=ctx.createLinearGradient(0,isB?gy0:0,0,isB?1024:(barH+pad));
-    if(isB){g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(0.35,"rgba(0,0,0,0.4)");g.addColorStop(1,"rgba(0,0,0,0.72)");}
-    else{g.addColorStop(0,"rgba(0,0,0,0.72)");g.addColorStop(0.65,"rgba(0,0,0,0.4)");g.addColorStop(1,"rgba(0,0,0,0)");}
-    ctx.fillStyle=g;ctx.fillRect(0,isB?gy0:0,1024,barH+pad);
-    var cy=isB?(1024-barH/2-6):(barH/2+10);
-    ctx.font='bold 22px '+FF;var nameW=ctx.measureText(bn).width;
-    ctx.font='italic 13px '+FF;var tagW=tg?ctx.measureText(tg).width:0;
-    var textW=Math.max(nameW,tagW);
-    var ls=logoImg?46:0,gap=logoImg?14:0,groupW=ls+gap+textW;
-    var startX=isC?(1024-groupW)/2:(isL?mg:(1024-mg-groupW));
-    var textX=startX+ls+gap;
-    if(logoImg){
-      var lx=startX,ly=cy-ls/2;
-      ctx.save();ctx.beginPath();ctx.arc(lx+ls/2,ly+ls/2,ls/2,0,Math.PI*2);ctx.closePath();ctx.clip();
-      ctx.drawImage(logoImg,lx,ly,ls,ls);ctx.restore();
-      ctx.beginPath();ctx.arc(lx+ls/2,ly+ls/2,ls/2,0,Math.PI*2);ctx.strokeStyle="rgba(200,169,81,0.6)";ctx.lineWidth=1.5;ctx.stroke();
+    var logoD=Math.round(W*((parseFloat(cfg.logoPct)||12)/100));
+    var nameSize=Math.round(H*((parseFloat(cfg.namePct)||5)/100));
+    var tagSize=Math.round(H*((parseFloat(cfg.taglinePct)||3)/100));
+    var isB=pos.indexOf("bottom")===0,isL=pos.indexOf("left")>0,isR=pos.indexOf("right")>0,isC=!isL&&!isR;
+    var mg=Math.round(W*0.035),hasLogo=!!logoImg,gap=hasLogo?Math.round(logoD*0.3):0;
+    ctx.font='bold '+nameSize+'px '+FF;var nameW=ctx.measureText(bn).width;
+    ctx.font='italic '+tagSize+'px '+FF;var tagW=tg?ctx.measureText(tg).width:0;
+    var textW=Math.max(nameW,tagW),groupW=(hasLogo?logoD:0)+gap+textW;
+    var blockH=Math.max(hasLogo?logoD:0,nameSize+(tg?tagSize+Math.round(tagSize*0.5):0));
+    var cy=isB?(H-mg-blockH/2):(mg+blockH/2);
+    var startX=isC?(W-groupW)/2:(isL?mg:(W-mg-groupW));
+    var textX=startX+(hasLogo?logoD+gap:0);
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
+    if(hasLogo){
+      var lx=startX,ly=cy-logoD/2;
+      ctx.save();
+      ctx.shadowColor="rgba(0,0,0,0.40)";ctx.shadowBlur=Math.round(logoD*0.16);ctx.shadowOffsetY=Math.round(logoD*0.04);
+      ctx.beginPath();ctx.arc(lx+logoD/2,ly+logoD/2,logoD/2,0,Math.PI*2);ctx.closePath();ctx.clip();
+      ctx.drawImage(logoImg,lx,ly,logoD,logoD);
+      ctx.restore();
+      ctx.beginPath();ctx.arc(lx+logoD/2,ly+logoD/2,logoD/2,0,Math.PI*2);ctx.strokeStyle="rgba(255,255,255,0.85)";ctx.lineWidth=Math.max(1.5,logoD*0.018);ctx.stroke();
     }
-    ctx.textAlign="left";ctx.textBaseline="alphabetic";
-    ctx.shadowColor="rgba(0,0,0,0.55)";ctx.shadowBlur=4;
-    ctx.font='bold 22px '+FF;ctx.fillStyle="rgba(255,255,255,0.95)";ctx.fillText(bn,textX,cy+(tg?-2:6));
-    if(tg){ctx.font='italic 13px '+FF;ctx.fillStyle="rgba(255,255,255,0.78)";ctx.fillText(tg,textX,cy+18);}
-    ctx.shadowBlur=0;
+    ctx.textAlign="left";ctx.textBaseline="middle";
+    var nameY=tg?(cy-tagSize*0.55):cy;
+    ctx.save();ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=Math.round(nameSize*0.45);ctx.shadowOffsetY=Math.round(nameSize*0.06);
+    ctx.font='bold '+nameSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.98)";ctx.fillText(bn,textX,nameY);
+    if(tg){ctx.font='italic '+tagSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.88)";ctx.fillText(tg,textX,nameY+nameSize*0.55+tagSize*0.65);}
+    ctx.restore();
+  }
+
+  function drawCode(ctx,code,pos,W,H){
+    if(!code)return;
+    var FF='"Noto Sans Devanagari", Georgia, serif';
+    var sz=Math.round(H*((parseFloat(cfg.codePct)||3)/100)),mg=Math.round(W*0.035);
+    ctx.save();ctx.font='bold '+sz+'px '+FF;ctx.textBaseline="alphabetic";
+    var w=ctx.measureText(code).width;
+    var x=(pos.indexOf("left")>0)?mg:(W-mg-w);
+    var y=(pos.indexOf("top")===0)?(mg+sz):(H-mg);
+    ctx.textAlign="left";ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=Math.round(sz*0.4);ctx.shadowOffsetY=Math.round(sz*0.06);
+    ctx.fillStyle="rgba(255,255,255,0.96)";ctx.fillText(code,x,y);
+    ctx.restore();
   }
 
   function doBrand(src){
@@ -283,17 +327,17 @@ function App(){
     var ctx=c.getContext("2d");c.width=1024;c.height=1024;
     var im=new Image();im.crossOrigin="anonymous";
     im.onload=function(){
-      ctx.clearRect(0,0,1024,1024);ctx.drawImage(im,0,0,1024,1024);
-      if(lpos==="none"){var fu0=c.toDataURL("image/png");setFin(fu0);setPh("done");setSts("Ready!");api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu0})}).catch(function(){});return;}
-      var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"";
+      ctx.clearRect(0,0,1024,1024);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(im,0,0,1024,1024);
+      var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"",codePos=pcodePos||cfg.codePos||"top-right";
       function finish(logoImg){
         ensureFonts().then(function(){
-          drawText(ctx,bn,tg,lpos,logoImg);
+          if(lpos!=="none")drawText(ctx,bn,tg,lpos,logoImg,1024,1024);
+          if(pcode&&pcode.trim())drawCode(ctx,pcode.trim(),codePos,1024,1024);
           var fu=c.toDataURL("image/png");setFin(fu);setPh("done");setSts("Ready!");
           api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
         });
       }
-      if(cfg.logoBase64){var li=new Image();li.onload=function(){finish(li);};li.onerror=function(){finish(null);};li.src=cfg.logoBase64;}
+      if(lpos!=="none"&&cfg.logoBase64){var li=new Image();li.onload=function(){finish(li);};li.onerror=function(){finish(null);};li.src=cfg.logoBase64;}
       else finish(null);
     };
     im.onerror=function(){setErr("Could not load generated image");setPh("scene");};
@@ -302,16 +346,14 @@ function App(){
 
   function doDl(){if(!fin)return;var a=document.createElement("a");a.href=fin;a.download="jewelry_marketing.png";a.click();}
 
-  // Share within the user gesture (build File synchronously, no await before share)
+  // Share the actual image FILE (or download). Never share title/url, which some targets turn into a link.
   function doShare(){
     if(!fin)return;
     try{
       var file=dataURLtoFile(fin,"jewelry_marketing.png");
       if(navigator.canShare&&navigator.canShare({files:[file]})){
-        navigator.share({files:[file],title:"Jewelry Marketing Image"}).catch(function(e){if(e&&e.name!=="AbortError")setErr("Share didn't complete \u2014 you can use Save instead.");});
-      }else if(navigator.share){
-        navigator.share({title:"Jewelry Marketing Image"}).catch(function(e){if(e&&e.name!=="AbortError")doDl();});
-      }else{doDl();setMsg("Sharing isn't supported in this browser \u2014 image saved instead.");}
+        navigator.share({files:[file]}).catch(function(e){if(e&&e.name!=="AbortError")doDl();});
+      }else{doDl();setMsg("Your browser can't share the file directly, so it was downloaded \u2014 share it from your gallery.");}
     }catch(e){doDl();setMsg("Couldn't open share \u2014 image saved instead.");}
   }
 
@@ -336,7 +378,7 @@ function App(){
   function copyReset(){if(resetInfo&&navigator.clipboard){navigator.clipboard.writeText(resetInfo.pw).then(function(){setMsg("Copied");}).catch(function(){});}}
 
   function saveSettings(){
-    api("/api/settings",{method:"POST",body:JSON.stringify({openaiKey:document.getElementById("s_k").value,brandName:document.getElementById("s_b").value,tagline:document.getElementById("s_t").value,model:document.getElementById("s_m").value,size:document.getElementById("s_sz").value,quality:document.getElementById("s_q").value,logoPos:document.getElementById("s_lp").value})}).then(function(){setMsg("Settings saved");lCfg();lSet();}).catch(function(e){setErr(e.message);});
+    api("/api/settings",{method:"POST",body:JSON.stringify({openaiKey:document.getElementById("s_k").value,brandName:document.getElementById("s_b").value,tagline:document.getElementById("s_t").value,model:document.getElementById("s_m").value,size:document.getElementById("s_sz").value,quality:document.getElementById("s_q").value,logoPos:document.getElementById("s_lp").value,logoPct:document.getElementById("s_logop").value,namePct:document.getElementById("s_namep").value,taglinePct:document.getElementById("s_tagp").value,codePos:document.getElementById("s_codepos").value,codePct:document.getElementById("s_codep").value})}).then(function(){setMsg("Settings saved");lCfg();lSet();}).catch(function(e){setErr(e.message);});
   }
   function saveDrive(){
     api("/api/settings",{method:"POST",body:JSON.stringify({driveClientId:document.getElementById("d_c").value,driveClientSecret:document.getElementById("d_s").value,driveBackupHours:document.getElementById("d_h").value})}).then(function(){setMsg("Drive settings saved");lSet();}).catch(function(e){setErr(e.message);});
@@ -429,8 +471,26 @@ function App(){
                     :h("input",{value:sc[x[1]],onChange:function(e){var o={};o[x[1]]=e.target.value;setSc(function(p){return Object.assign({},p,o);});},style:Object.assign({},si,{fontSize:12})}));
             })
           ):null,
+          ph==="scene"?h("div",{style:Object.assign({},sc2,{marginTop:10})},
+            h("div",{className:"g2"},
+              h("div",null,h("label",{style:sl},"Show jewelry"),h("select",{value:disp,onChange:function(e){setDisp(e.target.value);setPromptDirty(false);},style:si},DISPLAYS.map(function(d){return h("option",{key:d.id,value:d.id},d.n);}))),
+              h("div",null,h("label",{style:sl},"Product code (optional)"),h("input",{value:pcode,onChange:function(e){setPcode(e.target.value);},placeholder:"e.g. GC-1042",style:si}))
+            ),
+            pcode?h("div",{style:{marginTop:8}},h("label",{style:sl},"Code position"),h("select",{value:pcodePos||cfg.codePos||"top-right",onChange:function(e){setPcodePos(e.target.value);},style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);}))):null,
+            h("div",{style:{marginTop:10}},
+              h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,flexWrap:"wrap",gap:6}},
+                h("label",{style:Object.assign({},sl,{marginBottom:0})},"Prompt sent to AI (editable)"),
+                h("div",{style:{display:"flex",gap:6}},
+                  h("button",{onClick:function(){setPromptText(buildPrompt());setPromptDirty(false);},style:mini},"Rebuild"),
+                  h("button",{onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(promptText).then(function(){setMsg("Prompt copied");}).catch(function(){});},style:mini},"Copy")
+                )
+              ),
+              h("textarea",{value:promptText,onChange:function(e){setPromptText(e.target.value);setPromptDirty(true);},rows:7,style:Object.assign({},si,{fontSize:12,resize:"vertical",lineHeight:1.4})}),
+              h("div",{style:{fontSize:10,color:t.t2,marginTop:4}},"This exact text is sent to the AI. Edit it freely, or copy it to use in another tool.")
+            )
+          ):null,
           img&&ph==="idle"?h("button",{onClick:doAnalyze,style:Object.assign({},sb(true),{width:"100%",marginTop:10,padding:13,fontSize:14})},"\u2728 Create Marketing Image"):null,
-          ph==="scene"?h("button",{onClick:doGen,style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},"\uD83C\uDFA8 Generate with This Scene"):null,
+          ph==="scene"?h("button",{onClick:doGen,style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},"\uD83C\uDFA8 Generate \u2014 "+(cfg.quality==="high"?"premium, ~60\u201390s":cfg.quality==="low"?"draft, ~10\u201320s":"standard, ~30\u201360s")):null,
           ph==="done"?h("div",{style:{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}},
             h("button",{onClick:createNew,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDCC4 Create New"),
             h("button",{onClick:doGen,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD04 Regenerate with same input"),
@@ -497,7 +557,12 @@ function App(){
             h("div",null,h("label",{style:sl},"Image Model"),h("input",{id:"s_m",defaultValue:sett.model||"gpt-image-2",placeholder:"gpt-image-2",style:si})),
             h("div",null,h("label",{style:sl},"Image Size"),h("input",{id:"s_sz",defaultValue:sett.size||"1024x1024",placeholder:"1024x1024",style:si})),
             h("div",null,h("label",{style:sl},"Default Quality"),h("select",{id:"s_q",defaultValue:sett.quality||"medium",style:si},h("option",{value:"low"},"Draft ~Rs0.5"),h("option",{value:"medium"},"Standard ~Rs4-5"),h("option",{value:"high"},"Premium ~Rs15-18"))),
-            h("div",null,h("label",{style:sl},"Default Logo Position"),h("select",{id:"s_lp",defaultValue:sett.logoPos||"bottom-center",style:si},POSS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
+            h("div",null,h("label",{style:sl},"Default Logo Position"),h("select",{id:"s_lp",defaultValue:sett.logoPos||"bottom-center",style:si},POSS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);}))),
+            h("div",null,h("label",{style:sl},"Logo size (% of width)"),h("input",{id:"s_logop",type:"number",min:"3",max:"40",defaultValue:sett.logoPct||"12",style:si})),
+            h("div",null,h("label",{style:sl},"Brand name size (% of height)"),h("input",{id:"s_namep",type:"number",min:"2",max:"15",defaultValue:sett.namePct||"5",style:si})),
+            h("div",null,h("label",{style:sl},"Tagline size (% of height)"),h("input",{id:"s_tagp",type:"number",min:"1",max:"10",defaultValue:sett.taglinePct||"3",style:si})),
+            h("div",null,h("label",{style:sl},"Default code position"),h("select",{id:"s_codepos",defaultValue:sett.codePos||"top-right",style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);}))),
+            h("div",null,h("label",{style:sl},"Code size (% of height)"),h("input",{id:"s_codep",type:"number",min:"1",max:"10",defaultValue:sett.codePct||"3",style:si}))
           ),
           h("div",{style:{fontSize:10,color:t.t2,marginTop:8,lineHeight:1.5}},"Model name is free text so it can be updated if OpenAI renames it. Verify current options at platform.openai.com/docs."),
           h("button",{onClick:saveSettings,style:Object.assign({},sb(true),{marginTop:10})},"Save Settings")
