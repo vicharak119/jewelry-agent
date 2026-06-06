@@ -1,4 +1,4 @@
-# Jewelry Marketing Agent (v8)
+# Jewelry Marketing Agent (v8.2)
 
 Turns raw jewelry photos into branded marketing images. AI analyzes the piece, you review/edit the
 scene, it generates a photorealistic shot and overlays your brand (logo + name + tagline).

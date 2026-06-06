@@ -93,3 +93,52 @@ Settings size/code fields render; body-part mapping; share helper builds a real 
 - **Docs:** the two HTML help guides (admin setup; user how-to), version-tagged, wired into a Help
   section before and after login, role-gated — built against the final v8 screens, text-based (no
   screenshots), once you've confirmed the v8 UI.
+
+## v8.1 update
+
+- **Control placement:** "Show jewelry on" (mannequin / model / props) and the Product code + position
+  now appear **before** Analyze, alongside Style / Logo position / Extra instructions — so you set
+  them up front. The editable prompt still appears in the scene step (it only exists after analysis).
+- **Auto-cleanup / retention (new):** Settings has **"Auto-delete images after (days, 0 = never)"**
+  (default 30). Old uploaded + generated images in R2 and their history rows are removed; the audit
+  log is kept; `logo.png` is never deleted. Cloudflare Pages has no cron, so cleanup runs
+  **opportunistically** — a background pass kicks off (via `waitUntil`) when an admin loads
+  Settings/History/Audit, at most once every 12h — plus a manual **"Clean up now"** button in
+  Settings. Backend: `runCleanup()` + `POST /api/cleanup` (admin), audited as `data.cleanup`.
+- **Re-apply branding (new):** the generated (un-branded) image is kept in memory, and a **"Re-apply
+  branding"** button on the result re-runs the logo/name/tagline/code overlay with the **current**
+  Settings — no new AI call, no cost. Use this after changing the size %s. Note: branding is baked
+  at generation time, so changing sizes only affects new generations or a re-apply — that's why
+  earlier size changes looked "the same" on an already-generated image.
+- SW cache bumped to `jw-v8b`; version 8.1.0.
+
+## v8.2 update (the "v8b" feature set)
+
+- **Leave-the-page generation (async jobs).** Generation no longer holds the browser open. The client
+  starts a server-side job (`POST /api/generate-job` → returns a job id); the work runs in the
+  background via `waitUntil` even if you switch apps, lock the phone, or close the tab. The client
+  polls `GET /api/job?id=...` and finishes (downloads the result, applies branding) when you return.
+  The active job id + branding choices are saved in `localStorage`, so a reload/reopen **resumes**
+  automatically.
+- **Real progress bar.** Staged status (queued → generating → adding branding → done) with an
+  elapsed/quality-aware bar. Honest note: OpenAI gives no true progress signal, so the moving part
+  during "generating" is a time estimate; the stage changes are real.
+- **New `jobs` table.** Run `migrate_v8_to_v8b.sql` once in the D1 console on each instance
+  (CREATE TABLE jobs). New installs get it from `schema.sql`. Old jobs are pruned by the same
+  retention setting.
+- **Two help docs** (`public/setup-guide.html`, `public/user-guide.html`), version-tagged, linked
+  from a Help area: on the first-time setup screen (both guides), the login screen (user guide), and
+  the header after login (User "Guide" for all; "Setup" for admins). Note: these are static pages, so
+  the role-gating is on which links are *shown* — the files themselves are reachable by direct URL,
+  which is fine for help content.
+- SW cache bumped to `jw-v8c`; version 8.2.0.
+
+### Honest limits on async jobs
+- `waitUntil` keeps the worker alive after responding, which is enough for typical generations. Very
+  long premium runs could in rare cases hit a worker time limit; if that happens the job shows
+  `error` and you re-generate. For guaranteed durability at scale, Cloudflare Queues/Durable Objects
+  would be the next step — not needed at current volumes.
+- Branding still happens in the browser, so the *fully branded* image completes when you return in
+  the **same browser** (the generated image is always saved server-side regardless, and is in History).
+- Live OpenAI edit calls, the canvas visuals, and Drive OAuth still can't be tested here — verify on
+  your deployment.

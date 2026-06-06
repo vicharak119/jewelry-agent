@@ -108,6 +108,67 @@ function b64FromBuf(buf) {
   return btoa(bin);
 }
 
+// Retention cleanup: delete uploaded/generated images (and their activity rows) older than retentionDays.
+// Never deletes logo.png. retentionDays=0 (or unset->default 30, set to 0) means keep forever. Audit log is preserved.
+async function runCleanup(DB, R2) {
+  try {
+    var raw = await getS(DB, "retentionDays");
+    var days = parseInt(raw === "" || raw == null ? "30" : raw, 10);
+    if (!days || days <= 0 || isNaN(days)) { await setS(DB, "lastCleanup", new Date().toISOString()); return 0; }
+    var cutoff = Date.now() - days * 86400000, cursor, deleted = 0;
+    do {
+      var listed = await R2.list({ limit: 1000, cursor: cursor });
+      var del = [];
+      for (var i = 0; i < listed.objects.length; i++) {
+        var k = listed.objects[i].key;
+        if (k === "logo.png") continue;
+        if (!(k.indexOf("uploads/") === 0 || k.indexOf("outputs/") === 0)) continue;
+        var fn = k.split("/").pop(), ts = parseInt(fn.split("_")[0], 10);
+        if (ts && ts < cutoff) del.push(k);
+      }
+      if (del.length) { await R2.delete(del); deleted += del.length; }
+      cursor = listed.truncated ? listed.cursor : null;
+    } while (cursor);
+    await DB.prepare("DELETE FROM activity WHERE timestamp < ?").bind(new Date(cutoff).toISOString()).run();
+    await DB.prepare("DELETE FROM jobs WHERE created_at < ?").bind(new Date(cutoff).toISOString()).run().catch(function () {});
+    await setS(DB, "lastCleanup", new Date().toISOString());
+    return deleted;
+  } catch (e) { return 0; }
+}
+
+// Background generation worker. Runs via ctx.waitUntil, so it completes even if the client leaves.
+async function processJob(env, jobId) {
+  var DB = env.DB, R2 = env.STORAGE;
+  try {
+    var job = await DB.prepare("SELECT * FROM jobs WHERE id=?").bind(jobId).first();
+    if (!job) return;
+    var p = JSON.parse(job.params_json || "{}");
+    await DB.prepare("UPDATE jobs SET status='generating',updated_at=? WHERE id=?").bind(new Date().toISOString(), jobId).run();
+    var gKey = await getS(DB, "openaiKey"); if (!gKey) throw new Error("No API key configured");
+    var srcObj = await R2.get(p.inputFile); if (!srcObj) throw new Error("Source image missing from storage");
+    var srcBuf = await srcObj.arrayBuffer();
+    var srcType = (srcObj.httpMetadata && srcObj.httpMetadata.contentType) || "image/png";
+    var srcExt = srcType.indexOf("png") > -1 ? "png" : (srcType.indexOf("webp") > -1 ? "webp" : "jpg");
+    var form = new FormData();
+    form.append("model", p.model); form.append("prompt", p.prompt); form.append("size", p.size); form.append("quality", p.quality);
+    form.append("image", new Blob([srcBuf], { type: srcType }), "source." + srcExt);
+    var gr = await fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { "Authorization": "Bearer " + gKey }, body: form });
+    if (!gr.ok) { var ge = await gr.json().catch(function () { return {}; }); throw new Error((ge.error && ge.error.message) || ("OpenAI error " + gr.status)); }
+    var gd = await gr.json(); var imgB64 = gd.data && gd.data[0] && gd.data[0].b64_json; var outKey = null;
+    if (imgB64) { outKey = "outputs/" + job.username + "/" + Date.now() + "_gen.png"; await R2.put(outKey, Uint8Array.from(atob(imgB64), function (c) { return c.charCodeAt(0); }), { httpMetadata: { contentType: "image/png" } }); }
+    var cost = p.quality === "high" ? "~Rs15-18" : p.quality === "low" ? "~Rs0.5" : "~Rs4-5";
+    await DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,output_file,jewelry_type,photo_style,model,quality,status,cost_estimate)VALUES(?,?,?,?,?,?,?,?,?,'success',?)").bind(crypto.randomUUID(), new Date().toISOString(), job.username, p.inputFile, outKey || "", p.jewelryType || "", p.style || "", p.model, p.quality, cost).run().catch(function () {});
+    await DB.prepare("UPDATE jobs SET status='done',result_key=?,updated_at=? WHERE id=?").bind(outKey, new Date().toISOString(), jobId).run();
+  } catch (e) {
+    var msg = (e && e.message) || "error";
+    await DB.prepare("UPDATE jobs SET status='error',error_msg=?,updated_at=? WHERE id=?").bind(msg, new Date().toISOString(), jobId).run().catch(function () {});
+    try {
+      var j2 = await env.DB.prepare("SELECT username,params_json FROM jobs WHERE id=?").bind(jobId).first();
+      if (j2) { var pp = JSON.parse(j2.params_json || "{}"); await env.DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,jewelry_type,photo_style,model,quality,status,error_msg)VALUES(?,?,?,?,?,?,?,?,'error',?)").bind(crypto.randomUUID(), new Date().toISOString(), j2.username, pp.inputFile || "", pp.jewelryType || "", pp.style || "", pp.model || "", pp.quality || "", msg).run().catch(function () {}); }
+    } catch (_) {}
+  }
+}
+
 export async function onRequest(ctx) {
   var req = ctx.request, env = ctx.env, url = new URL(req.url);
   var path = url.pathname.replace("/api/", ""), method = req.method;
@@ -151,9 +212,15 @@ export async function onRequest(ctx) {
     var isAdmin = user.role === "admin";
 
     // -- centralized admin gate (also records privilege-escalation probing) --
-    var ADMIN_PATHS = ["users", "settings", "brand-asset", "audit", "export/csv", "export/images", "drive/auth-url", "drive/status", "drive/backup-now"];
+    var ADMIN_PATHS = ["users", "settings", "brand-asset", "audit", "cleanup", "export/csv", "export/images", "drive/auth-url", "drive/status", "drive/backup-now"];
     var isAdminPath = ADMIN_PATHS.indexOf(path) > -1 || path.indexOf("users/") === 0;
     if (isAdminPath && !isAdmin) { await audit(DB, req, user.username, "unauthorized.admin_attempt", path, method); return err("Admin only", 403); }
+
+    // Opportunistic retention cleanup (admin views only, at most ~once/12h). Cloudflare Pages has no cron.
+    if (isAdmin && (path === "settings" || path === "logs" || path === "audit")) {
+      var lastC = await getS(DB, "lastCleanup");
+      if (!lastC || (Date.now() - Date.parse(lastC)) > 43200000) ctx.waitUntil(runCleanup(DB, R2));
+    }
 
     if (method === "GET" && path === "auth/me") {
       var me = await DB.prepare("SELECT id,username,email,role,must_change_password FROM users WHERE id=?").bind(user.id).first();
@@ -236,6 +303,12 @@ export async function onRequest(ctx) {
       return json({ message: "Logo uploaded" });
     }
 
+    if (method === "POST" && path === "cleanup") {
+      var n = await runCleanup(DB, R2);
+      await audit(DB, req, user.username, "data.cleanup", "", n + " images deleted");
+      return json({ message: "Cleanup complete", deleted: n });
+    }
+
     if (method === "GET" && path === "settings/public") {
       var keys = ["brandName", "tagline", "logoPos", "model", "quality", "size", "style", "logoPct", "namePct", "taglinePct", "codePos", "codePct"], ps = {};
       for (var pk of keys) ps[pk] = await getS(DB, pk);
@@ -281,6 +354,27 @@ export async function onRequest(ctx) {
       var ad = await ar.json(); var raw = (ad.choices && ad.choices[0] && ad.choices[0].message && ad.choices[0].message.content) || "";
       var analysis = JSON.parse(raw.replace(/```json\s*/g, "").replace(/```/g, "").trim());
       return json({ analysis: analysis, inputFile: inputKey });
+    }
+
+    if (method === "POST" && path === "generate-job") {
+      var jgKey = await getS(DB, "openaiKey"); if (!jgKey) return err("No API key");
+      var jb = await req.json(); if (!jb.inputFile) return err("Missing source image reference");
+      var jmdl = jb.model || (await getS(DB, "model")) || "gpt-image-2";
+      var jqual = jb.quality || (await getS(DB, "quality")) || "medium";
+      var jsize = jb.size || (await getS(DB, "size")) || "1024x1024";
+      var jobId = crypto.randomUUID(), nowIso = new Date().toISOString();
+      var params = { prompt: jb.prompt, model: jmdl, quality: jqual, size: jsize, inputFile: jb.inputFile, jewelryType: (jb.analysis && jb.analysis.type) || "", style: jb.style || "" };
+      await DB.prepare("INSERT INTO jobs(id,username,status,created_at,updated_at,params_json)VALUES(?,?,'queued',?,?,?)").bind(jobId, user.username, nowIso, nowIso, JSON.stringify(params)).run();
+      ctx.waitUntil(processJob(env, jobId));
+      return json({ jobId: jobId });
+    }
+
+    if (method === "GET" && path === "job") {
+      var jid = url.searchParams.get("id"); if (!jid) return err("No job id");
+      var j = await DB.prepare("SELECT id,username,status,result_key,error_msg,created_at FROM jobs WHERE id=?").bind(jid).first();
+      if (!j) return err("Job not found", 404);
+      if (!isAdmin && j.username !== user.username) return err("Forbidden", 403);
+      return json({ id: j.id, status: j.status, resultKey: j.result_key, error: j.error_msg, createdAt: j.created_at });
     }
 
     if (method === "POST" && path === "generate") {

@@ -162,7 +162,8 @@ function App(){
   var[fin,setFin]=useState(null);var[sts,setSts]=useState("");
   var[ph,setPh]=useState("idle");var[lpos,setLpos]=useState("bottom-center");
   var[disp,setDisp]=useState("mannequin");var[promptText,setPromptText]=useState("");var[promptDirty,setPromptDirty]=useState(false);
-  var[pcode,setPcode]=useState("");var[pcodePos,setPcodePos]=useState("");
+  var[pcode,setPcode]=useState("");var[pcodePos,setPcodePos]=useState("");var[genSrc,setGenSrc]=useState(null);
+  var[jobId,setJobId]=useState(null);var[jobStatus,setJobStatus]=useState("");var[jobStart,setJobStart]=useState(0);var[prog,setProg]=useState(0);
   var[usrs,setUsrs]=useState([]);var[logs,setLogs]=useState([]);var[auds,setAuds]=useState([]);
   var[sett,setSett]=useState({});var[drvSt,setDrvSt]=useState({});
   var cv=useRef(null),fR=useRef(null),unR=useRef(null),pwR=useRef(null),npR=useRef(null),suR=useRef(null),spR=useRef(null),seR=useRef(null),logoR=useRef(null);
@@ -188,6 +189,46 @@ function App(){
   useEffect(function(){if(!err)return;var id=setTimeout(function(){setErr("");},5000);return function(){clearTimeout(id);};},[err]);
   useEffect(function(){if(!msg)return;var id=setTimeout(function(){setMsg("");},5000);return function(){clearTimeout(id);};},[msg]);
   useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt());},[ph,an,sc,disp,sty,ext,promptDirty]);
+  // Poll the running job; runs server-side so leaving/closing the page is safe.
+  useEffect(function(){
+    if(!jobId)return;
+    var stop=false,aj={};try{aj=JSON.parse(localStorage.getItem("activeJob")||"{}");}catch(e){}
+    var q=aj.quality||cfg.quality||"medium",est=q==="high"?80000:q==="low"?15000:45000;
+    function tick(){var el=Date.now()-(jobStart||Date.now());setProg(function(prev){if(prev>=90)return prev;return Math.max(prev,Math.min(85,5+(el/est)*80));});}
+    function finishWith(key){
+      setProg(92);setSts("Applying brand...");setPh("brand");
+      var tkn=sessionStorage.getItem("jwt");
+      fetch("/api/file?key="+encodeURIComponent(key),{headers:{Authorization:"Bearer "+tkn}}).then(function(r){if(!r.ok)throw new Error("load failed");return r.blob();}).then(function(bl){
+        var rd=new FileReader();rd.onload=function(){
+          setGenSrc(rd.result);
+          var o={};try{var a2=JSON.parse(localStorage.getItem("activeJob")||"{}");o={lpos:a2.lpos,pcode:a2.pcode,pcodePos:a2.pcodePos};if(a2.sc)setSc(a2.sc);}catch(e){}
+          setProg(100);doBrand(rd.result,o);
+          try{localStorage.removeItem("activeJob");}catch(e){}setJobId(null);
+        };rd.readAsDataURL(bl);
+      }).catch(function(e){setErr("Generated, but couldn't load the image: "+e.message);setPh("scene");try{localStorage.removeItem("activeJob");}catch(_){}setJobId(null);});
+    }
+    function poll(){
+      api("/api/job?id="+encodeURIComponent(jobId)).then(function(j){
+        if(stop)return;setJobStatus(j.status);
+        if(j.status==="done"&&j.resultKey)finishWith(j.resultKey);
+        else if(j.status==="error"){setErr("Generation failed: "+(j.error||"unknown"));setPh("scene");try{localStorage.removeItem("activeJob");}catch(e){}setJobId(null);}
+      }).catch(function(){});
+    }
+    poll();var pi=setInterval(poll,3000),ti=setInterval(tick,500);
+    function onVis(){if(document.visibilityState==="visible")poll();}
+    document.addEventListener("visibilitychange",onVis);
+    return function(){stop=true;clearInterval(pi);clearInterval(ti);document.removeEventListener("visibilitychange",onVis);};
+  },[jobId,jobStart]);
+
+  // Resume an in-flight job after a reload / app reopen.
+  useEffect(function(){
+    if(vw!=="work"||jobId)return;
+    var aj=null;try{aj=JSON.parse(localStorage.getItem("activeJob")||"null");}catch(e){}
+    if(aj&&aj.jobId){
+      setTab("create");setSc(aj.sc||{d:"",b:"",p:"",m:""});setSty(aj.sty||"luxury");setLpos(aj.lpos||"bottom-center");setPcode(aj.pcode||"");setPcodePos(aj.pcodePos||"");setDisp(aj.disp||"mannequin");
+      setJobStart(aj.startedAt||Date.now());setPh("gen");setJobStatus("generating");setProg(20);setSts("Resuming your generation...");setJobId(aj.jobId);
+    }
+  },[vw]);
 
   if(vw==="setup"){
     function doSetup(){setErr("");api("/api/auth/setup",{method:"POST",body:JSON.stringify({username:suR.current.value,email:seR.current?seR.current.value:"",password:spR.current.value})}).then(function(d){sessionStorage.setItem("jwt",d.token);setTk(d.token);setUsr({username:d.username,role:d.role});setVw("work");lCfg();}).catch(function(e){setErr(e.message);});}
@@ -200,6 +241,10 @@ function App(){
         h("input",{ref:seR,placeholder:"Email (optional)",style:Object.assign({},si,{marginBottom:10})}),
         h("input",{ref:spR,type:"password",placeholder:"Admin password (min 8 chars)",onKeyDown:function(e){if(e.key==="Enter")doSetup();},style:Object.assign({},si,{marginBottom:12})}),
         h("button",{onClick:doSetup,style:Object.assign({},sb(true),{width:"100%"})},"Create Admin Account"),
+        h("div",{style:{fontSize:11,marginTop:12,display:"flex",gap:14,justifyContent:"center",flexWrap:"wrap"}},
+          h("a",{href:"/setup-guide.html",target:"_blank",style:{color:t.g,textDecoration:"underline"}},"\uD83D\uDEE0 Setup guide"),
+          h("a",{href:"/user-guide.html",target:"_blank",style:{color:t.g,textDecoration:"underline"}},"\uD83D\uDCD6 User guide")
+        ),
         err?h("div",{style:{color:t.er,fontSize:12,marginTop:10}},"\u26A0 "+err):null
       )
     );
@@ -216,6 +261,7 @@ function App(){
         h("input",{ref:pwR,type:"password",placeholder:"Password",onKeyDown:function(e){if(e.key==="Enter")doLogin();},style:Object.assign({},si,{marginBottom:12})}),
         h("button",{onClick:doLogin,style:Object.assign({},sb(true),{width:"100%"})},"Login"),
         h("div",{style:{fontSize:11,color:t.t2,marginTop:10}},"Forgot password? Ask your admin to reset it."),
+        h("div",{style:{fontSize:11,marginTop:8}},h("a",{href:"/user-guide.html",target:"_blank",style:{color:t.g,textDecoration:"underline"}},"\uD83D\uDCD6 How to use this app")),
         err?h("div",{style:{color:t.er,fontSize:12,marginTop:10}},"\u26A0 "+err):null,
         h("button",{onClick:function(){setDk(!dk);},style:{background:"none",border:"1px solid "+t.bd,borderRadius:6,color:t.t2,padding:"4px 12px",cursor:"pointer",fontSize:11,marginTop:16}},dk?"\u2600 Light":"\uD83C\uDF19 Dark")
       )
@@ -238,8 +284,8 @@ function App(){
   var isA=usr&&usr.role==="admin";
   var bsy=ph==="analyzing"||ph==="gen"||ph==="brand";
 
-  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setFin(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");}
-  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");if(fR.current)fR.current.value="";}
+  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setFin(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);}
+  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);if(fR.current)fR.current.value="";}
 
   function doAnalyze(){
     if(!imgF){setErr("Upload image first");return;}
@@ -269,12 +315,16 @@ function App(){
   function doGen(){
     if(!an){setErr("Analyze first");return;}
     var pr=(promptText&&promptText.trim())?promptText:buildPrompt();
-    setErr("");setPh("gen");setSts("Generating \u2014 "+qEta()+". Please keep this screen open.");
-    api("/api/generate",{method:"POST",body:JSON.stringify({prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,inputFile:an.inputFile})}).then(function(d){
-      var url=d.b64_json?"data:image/png;base64,"+d.b64_json:d.url;
-      if(!url)throw new Error("No image returned");setPh("brand");setSts("Applying brand...");doBrand(url);
+    var startMs=Date.now();
+    setErr("");setFin(null);setPh("gen");setProg(4);setJobStatus("queued");setJobStart(startMs);setSts("Starting "+qEta()+"...");
+    api("/api/generate-job",{method:"POST",body:JSON.stringify({prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,inputFile:an.inputFile})}).then(function(d){
+      if(!d.jobId)throw new Error("Could not start generation");
+      try{localStorage.setItem("activeJob",JSON.stringify({jobId:d.jobId,sc:sc,sty:sty,lpos:lpos,pcode:pcode,pcodePos:pcodePos,disp:disp,startedAt:startMs,quality:cfg.quality}));}catch(e){}
+      setJobId(d.jobId);
     }).catch(function(e){setErr(e.message);setPh("scene");});
   }
+
+
 
   function drawText(ctx,bn,tg,pos,logoImg,W,H){
     if(pos==="none")return;
@@ -322,22 +372,26 @@ function App(){
     ctx.restore();
   }
 
-  function doBrand(src){
+  function doBrand(src,opts){
+    opts=opts||{};
+    var uLpos=opts.lpos!==undefined&&opts.lpos!==null?opts.lpos:lpos;
+    var uCode=opts.pcode!==undefined&&opts.pcode!==null?opts.pcode:pcode;
+    var uCodePos=opts.pcodePos!==undefined&&opts.pcodePos!==null?opts.pcodePos:pcodePos;
     var c=cv.current;if(!c){setErr("Canvas unavailable");setPh("scene");return;}
     var ctx=c.getContext("2d");c.width=1024;c.height=1024;
     var im=new Image();im.crossOrigin="anonymous";
     im.onload=function(){
       ctx.clearRect(0,0,1024,1024);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(im,0,0,1024,1024);
-      var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"",codePos=pcodePos||cfg.codePos||"top-right";
+      var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"",codePos=uCodePos||cfg.codePos||"top-right";
       function finish(logoImg){
         ensureFonts().then(function(){
-          if(lpos!=="none")drawText(ctx,bn,tg,lpos,logoImg,1024,1024);
-          if(pcode&&pcode.trim())drawCode(ctx,pcode.trim(),codePos,1024,1024);
+          if(uLpos!=="none")drawText(ctx,bn,tg,uLpos,logoImg,1024,1024);
+          if(uCode&&uCode.trim())drawCode(ctx,uCode.trim(),codePos,1024,1024);
           var fu=c.toDataURL("image/png");setFin(fu);setPh("done");setSts("Ready!");
           api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
         });
       }
-      if(lpos!=="none"&&cfg.logoBase64){var li=new Image();li.onload=function(){finish(li);};li.onerror=function(){finish(null);};li.src=cfg.logoBase64;}
+      if(uLpos!=="none"&&cfg.logoBase64){var li=new Image();li.onload=function(){finish(li);};li.onerror=function(){finish(null);};li.src=cfg.logoBase64;}
       else finish(null);
     };
     im.onerror=function(){setErr("Could not load generated image");setPh("scene");};
@@ -377,8 +431,9 @@ function App(){
   }
   function copyReset(){if(resetInfo&&navigator.clipboard){navigator.clipboard.writeText(resetInfo.pw).then(function(){setMsg("Copied");}).catch(function(){});}}
 
+  function cleanupNow(){if(!confirm("Delete stored images older than the retention period now? This cannot be undone."))return;setMsg("Cleaning up...");api("/api/cleanup",{method:"POST"}).then(function(d){setMsg(d.message+" ("+(d.deleted||0)+" images removed)");lSet();}).catch(function(e){setErr(e.message);});}
   function saveSettings(){
-    api("/api/settings",{method:"POST",body:JSON.stringify({openaiKey:document.getElementById("s_k").value,brandName:document.getElementById("s_b").value,tagline:document.getElementById("s_t").value,model:document.getElementById("s_m").value,size:document.getElementById("s_sz").value,quality:document.getElementById("s_q").value,logoPos:document.getElementById("s_lp").value,logoPct:document.getElementById("s_logop").value,namePct:document.getElementById("s_namep").value,taglinePct:document.getElementById("s_tagp").value,codePos:document.getElementById("s_codepos").value,codePct:document.getElementById("s_codep").value})}).then(function(){setMsg("Settings saved");lCfg();lSet();}).catch(function(e){setErr(e.message);});
+    api("/api/settings",{method:"POST",body:JSON.stringify({openaiKey:document.getElementById("s_k").value,brandName:document.getElementById("s_b").value,tagline:document.getElementById("s_t").value,model:document.getElementById("s_m").value,size:document.getElementById("s_sz").value,quality:document.getElementById("s_q").value,logoPos:document.getElementById("s_lp").value,logoPct:document.getElementById("s_logop").value,namePct:document.getElementById("s_namep").value,taglinePct:document.getElementById("s_tagp").value,codePos:document.getElementById("s_codepos").value,codePct:document.getElementById("s_codep").value,retentionDays:document.getElementById("s_ret").value})}).then(function(){setMsg("Settings saved");lCfg();lSet();}).catch(function(e){setErr(e.message);});
   }
   function saveDrive(){
     api("/api/settings",{method:"POST",body:JSON.stringify({driveClientId:document.getElementById("d_c").value,driveClientSecret:document.getElementById("d_s").value,driveBackupHours:document.getElementById("d_h").value})}).then(function(){setMsg("Drive settings saved");lSet();}).catch(function(e){setErr(e.message);});
@@ -428,6 +483,8 @@ function App(){
       ),
       h("div",{style:{display:"flex",gap:4}},
         h("button",{onClick:function(){setDk(!dk);},style:Object.assign({},sb(false),{padding:"4px 8px",fontSize:10})},dk?"\u2600":"\uD83C\uDF19"),
+        h("button",{onClick:function(){window.open("/user-guide.html","_blank");},style:Object.assign({},sb(false),{padding:"4px 8px",fontSize:10})},"Guide"),
+        isA?h("button",{onClick:function(){window.open("/setup-guide.html","_blank");},style:Object.assign({},sb(false),{padding:"4px 8px",fontSize:10})},"Setup"):null,
         h("button",{onClick:function(){sessionStorage.removeItem("jwt");setTk("");setVw("login");setUsr(null);},style:Object.assign({},sb(false),{padding:"4px 8px",fontSize:10})},"Logout")
       )
     ),
@@ -459,9 +516,14 @@ function App(){
               );}))
             ),
             h("div",{className:"g2",style:{marginTop:10}},
-              h("div",null,h("label",{style:sl},"Logo Position"),h("select",{value:lpos,onChange:function(e){setLpos(e.target.value);},style:si},POSS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);}))),
-              h("div",null,h("label",{style:sl},"Extra Instructions (optional)"),h("textarea",{value:ext,onChange:function(e){setExt(e.target.value);},rows:2,placeholder:"e.g. 'rose petals', 'square crop'...",style:Object.assign({},si,{resize:"vertical"})}))
-            )
+              h("div",null,h("label",{style:sl},"Show jewelry on"),h("select",{value:disp,onChange:function(e){setDisp(e.target.value);setPromptDirty(false);},style:si},DISPLAYS.map(function(d){return h("option",{key:d.id,value:d.id},d.n);}))),
+              h("div",null,h("label",{style:sl},"Logo Position"),h("select",{value:lpos,onChange:function(e){setLpos(e.target.value);},style:si},POSS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
+            ),
+            h("div",{className:"g2",style:{marginTop:10}},
+              h("div",null,h("label",{style:sl},"Product code (optional)"),h("input",{value:pcode,onChange:function(e){setPcode(e.target.value);},placeholder:"e.g. GC-1042",style:si})),
+              h("div",null,h("label",{style:sl},"Code position"),h("select",{value:pcodePos||cfg.codePos||"top-right",onChange:function(e){setPcodePos(e.target.value);},style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
+            ),
+            h("div",{style:{marginTop:10}},h("label",{style:sl},"Extra Instructions (optional)"),h("textarea",{value:ext,onChange:function(e){setExt(e.target.value);},rows:2,placeholder:"e.g. 'rose petals', 'square crop'...",style:Object.assign({},si,{resize:"vertical"})}))
           ):null,
           ph==="scene"?h("div",{style:Object.assign({},sc2,{marginTop:10,background:dk?"rgba(200,169,81,0.04)":"rgba(176,140,42,0.04)"})},
             h("div",{style:{fontSize:11,fontWeight:"bold",color:t.g,letterSpacing:1,marginBottom:8}},"\uD83C\uDFAC SCENE \u2014 edit if needed"),
@@ -472,32 +534,33 @@ function App(){
             })
           ):null,
           ph==="scene"?h("div",{style:Object.assign({},sc2,{marginTop:10})},
-            h("div",{className:"g2"},
-              h("div",null,h("label",{style:sl},"Show jewelry"),h("select",{value:disp,onChange:function(e){setDisp(e.target.value);setPromptDirty(false);},style:si},DISPLAYS.map(function(d){return h("option",{key:d.id,value:d.id},d.n);}))),
-              h("div",null,h("label",{style:sl},"Product code (optional)"),h("input",{value:pcode,onChange:function(e){setPcode(e.target.value);},placeholder:"e.g. GC-1042",style:si}))
+            h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,flexWrap:"wrap",gap:6}},
+              h("label",{style:Object.assign({},sl,{marginBottom:0})},"Prompt sent to AI (editable)"),
+              h("div",{style:{display:"flex",gap:6}},
+                h("button",{onClick:function(){setPromptText(buildPrompt());setPromptDirty(false);},style:mini},"Rebuild"),
+                h("button",{onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(promptText).then(function(){setMsg("Prompt copied");}).catch(function(){});},style:mini},"Copy")
+              )
             ),
-            pcode?h("div",{style:{marginTop:8}},h("label",{style:sl},"Code position"),h("select",{value:pcodePos||cfg.codePos||"top-right",onChange:function(e){setPcodePos(e.target.value);},style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);}))):null,
-            h("div",{style:{marginTop:10}},
-              h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,flexWrap:"wrap",gap:6}},
-                h("label",{style:Object.assign({},sl,{marginBottom:0})},"Prompt sent to AI (editable)"),
-                h("div",{style:{display:"flex",gap:6}},
-                  h("button",{onClick:function(){setPromptText(buildPrompt());setPromptDirty(false);},style:mini},"Rebuild"),
-                  h("button",{onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(promptText).then(function(){setMsg("Prompt copied");}).catch(function(){});},style:mini},"Copy")
-                )
-              ),
-              h("textarea",{value:promptText,onChange:function(e){setPromptText(e.target.value);setPromptDirty(true);},rows:7,style:Object.assign({},si,{fontSize:12,resize:"vertical",lineHeight:1.4})}),
-              h("div",{style:{fontSize:10,color:t.t2,marginTop:4}},"This exact text is sent to the AI. Edit it freely, or copy it to use in another tool.")
-            )
+            h("textarea",{value:promptText,onChange:function(e){setPromptText(e.target.value);setPromptDirty(true);},rows:7,style:Object.assign({},si,{fontSize:12,resize:"vertical",lineHeight:1.4})}),
+            h("div",{style:{fontSize:10,color:t.t2,marginTop:4}},"This exact text is sent to the AI. Edit it freely, or copy it to use in another tool.")
           ):null,
           img&&ph==="idle"?h("button",{onClick:doAnalyze,style:Object.assign({},sb(true),{width:"100%",marginTop:10,padding:13,fontSize:14})},"\u2728 Create Marketing Image"):null,
           ph==="scene"?h("button",{onClick:doGen,style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},"\uD83C\uDFA8 Generate \u2014 "+(cfg.quality==="high"?"premium, ~60\u201390s":cfg.quality==="low"?"draft, ~10\u201320s":"standard, ~30\u201360s")):null,
           ph==="done"?h("div",{style:{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}},
             h("button",{onClick:createNew,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDCC4 Create New"),
             h("button",{onClick:doGen,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD04 Regenerate with same input"),
+            genSrc?h("button",{onClick:function(){if(genSrc){setPh("brand");setSts("Re-applying branding...");doBrand(genSrc);}},style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83C\uDFF7 Re-apply branding"):null,
             h("button",{onClick:doDl,style:Object.assign({},sb(true),{flex:"1 1 45%"})},"\uD83D\uDCE5 Save"),
             h("button",{onClick:doShare,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD17 Share")
           ):null,
-          bsy?h("div",{style:{marginTop:10,padding:"10px",background:dk?"rgba(200,169,81,0.06)":"rgba(176,140,42,0.05)",border:"1px solid "+t.bd,borderRadius:8,fontSize:12,color:t.g,textAlign:"center"}},"\u27F3 "+sts):null
+          (ph==="gen"||ph==="brand")?h("div",{style:Object.assign({},sc2,{marginTop:10})},
+            h("div",{style:{fontSize:12,color:t.g,marginBottom:6}},sts||"Working..."),
+            h("div",{style:{height:9,background:t.bd,borderRadius:6,overflow:"hidden"}},h("div",{style:{height:"100%",width:Math.round(prog)+"%",background:"linear-gradient(90deg,"+t.g+","+t.gl+")",transition:"width 0.5s ease"}})),
+            h("div",{style:{fontSize:10,color:t.t2,marginTop:6,display:"flex",justifyContent:"space-between"}},
+              h("span",null,jobStatus==="queued"?"Queued":jobStatus==="generating"?"Generating image":(jobStatus==="done"||ph==="brand")?"Adding your branding":"Working"),
+              h("span",null,Math.round(prog)+"%")),
+            h("div",{style:{fontSize:10,color:t.t2,marginTop:6,lineHeight:1.5}},"You can switch apps, lock the phone, or close this \u2014 it keeps generating on the server and finishes when you come back.")
+          ):(ph==="analyzing"?h("div",{style:{marginTop:10,padding:"10px",background:dk?"rgba(200,169,81,0.06)":"rgba(176,140,42,0.05)",border:"1px solid "+t.bd,borderRadius:8,fontSize:12,color:t.g,textAlign:"center"}},"\u27F3 "+sts):null)
         ),
         (an||fin||bsy)?h("div",null,
           an?h("div",{style:sc2},h("div",{style:{fontSize:10,fontWeight:"bold",color:t.g,marginBottom:4}},"IDENTIFIED"),h("div",{style:{fontSize:12}},an.type+" | "+an.metal+" | "+an.style),an.elements?h("div",{style:{fontSize:11,color:t.t2,marginTop:4}},an.elements):null):null,
@@ -562,10 +625,16 @@ function App(){
             h("div",null,h("label",{style:sl},"Brand name size (% of height)"),h("input",{id:"s_namep",type:"number",min:"2",max:"15",defaultValue:sett.namePct||"5",style:si})),
             h("div",null,h("label",{style:sl},"Tagline size (% of height)"),h("input",{id:"s_tagp",type:"number",min:"1",max:"10",defaultValue:sett.taglinePct||"3",style:si})),
             h("div",null,h("label",{style:sl},"Default code position"),h("select",{id:"s_codepos",defaultValue:sett.codePos||"top-right",style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);}))),
-            h("div",null,h("label",{style:sl},"Code size (% of height)"),h("input",{id:"s_codep",type:"number",min:"1",max:"10",defaultValue:sett.codePct||"3",style:si}))
+            h("div",null,h("label",{style:sl},"Code size (% of height)"),h("input",{id:"s_codep",type:"number",min:"1",max:"10",defaultValue:sett.codePct||"3",style:si})),
+            h("div",null,h("label",{style:sl},"Auto-delete images after (days, 0 = never)"),h("input",{id:"s_ret",type:"number",min:"0",max:"3650",defaultValue:sett.retentionDays||"30",style:si}))
           ),
           h("div",{style:{fontSize:10,color:t.t2,marginTop:8,lineHeight:1.5}},"Model name is free text so it can be updated if OpenAI renames it. Verify current options at platform.openai.com/docs."),
-          h("button",{onClick:saveSettings,style:Object.assign({},sb(true),{marginTop:10})},"Save Settings")
+          h("button",{onClick:saveSettings,style:Object.assign({},sb(true),{marginTop:10})},"Save Settings"),
+          h("div",{style:{marginTop:10,fontSize:11,color:t.t2,lineHeight:1.5}},
+            "Old uploaded/generated images are auto-deleted in the background based on the days above (0 = keep forever); their history rows are removed too. The audit log is kept.",
+            sett.lastCleanup?h("span",null," Last cleanup: "+fmtIST(sett.lastCleanup)+"."):null,
+            h("button",{onClick:cleanupNow,style:Object.assign({},mini,{marginLeft:8})},"Clean up now")
+          )
         ),
         h("div",{style:sc2},
           h("div",{style:{fontSize:12,fontWeight:"bold",color:t.g,marginBottom:8}},"Brand Logo"),

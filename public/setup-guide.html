@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Setup Guide — Jewelry Marketing Agent</title>
+<style>
+:root{--bg:#f7f5f0;--bg2:#efece4;--ink:#2a2520;--soft:#6b6256;--gold:#b08c2a;--gold2:#8a6d1b;--line:#e2d8c6;--card:#fffdf8;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:Georgia,"Times New Roman",serif;line-height:1.65;padding:0 0 80px}
+.wrap{max-width:780px;margin:0 auto;padding:0 22px}
+header.hero{background:linear-gradient(135deg,#1a1712,#2c2519);color:#f3ecd9;padding:46px 0 38px;border-bottom:3px solid var(--gold)}
+.hero .wrap{display:flex;flex-direction:column;gap:6px}
+.kicker{letter-spacing:3px;text-transform:uppercase;font-size:11px;color:var(--gold)}
+h1{font-size:30px;font-weight:700;letter-spacing:.3px}
+.sub{color:#cfc6b2;font-size:14px}
+.badge{display:inline-block;margin-top:10px;font-size:11px;letter-spacing:1px;border:1px solid rgba(200,169,81,.5);color:var(--gold);padding:3px 10px;border-radius:20px;width:max-content}
+h2{font-size:20px;color:var(--gold2);margin:38px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{font-size:15px;margin:20px 0 4px;color:var(--ink)}
+p,li{font-size:15px;color:#3a342c}
+ul,ol{margin:8px 0 8px 22px}
+li{margin:5px 0}
+.step{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:10px;padding:16px 18px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.step .n{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--gold)}
+.field{border-collapse:collapse;width:100%;margin:10px 0;font-size:14px}
+.field td{border:1px solid var(--line);padding:8px 10px;vertical-align:top}
+.field td:first-child{font-weight:700;width:38%;color:var(--gold2);background:var(--bg2)}
+code{background:#efe9dc;padding:1px 6px;border-radius:4px;font-family:"Courier New",monospace;font-size:13px}
+.note{background:#fbf6e9;border:1px solid #ecdfc0;border-radius:8px;padding:12px 14px;margin:12px 0;font-size:14px}
+.note b{color:var(--gold2)}
+.tip{border-left:3px solid #9ab38a}
+.warn{border-left:3px solid #c98a8a;background:#fbf0ef;border-color:#ecc9c9}
+footer{margin-top:46px;text-align:center;color:var(--soft);font-size:12px}
+a{color:var(--gold2)}
+.toc{columns:2;font-size:14px;margin:8px 0}
+@media(max-width:560px){.toc{columns:1}h1{font-size:24px}}
+</style>
+</head>
+<body>
+<header class="hero"><div class="wrap">
+  <span class="kicker">Administrator Guide</span>
+  <h1>Jewelry Marketing Agent — Setup</h1>
+  <span class="sub">Everything you need to get your studio running, from first login to daily settings.</span>
+  <span class="badge">Version v8b</span>
+</div></header>
+
+<div class="wrap">
+
+<h2>What this tool does</h2>
+<p>You upload a plain photo of a jewelry piece; the app studies it, places it into a styled marketing scene while keeping the exact piece intact, and overlays your brand (logo, name, tagline) and an optional product code. Everything runs on your own Cloudflare account, with your own OpenAI key.</p>
+
+<h2>Quick contents</h2>
+<div class="toc">
+1. First-time setup<br>
+2. OpenAI API key<br>
+3. Settings — every field<br>
+4. Brand logo<br>
+5. Users<br>
+6. Backup &amp; export<br>
+7. Audit log<br>
+8. Security &amp; recovery<br>
+9. Troubleshooting
+</div>
+
+<h2>1. First-time setup</h2>
+<div class="step"><span class="n">Step 1</span>
+<p>When an instance has no admin yet, the first screen is <b>First-Time Setup</b>. Enter:</p>
+<ul>
+<li><b>Admin username</b> — your login name (lowercase, no spaces is safest).</li>
+<li><b>Email</b> — optional, used for greetings and future email features.</li>
+<li><b>Admin password</b> — minimum 8 characters, with at least one uppercase letter, one number, and one special character.</li>
+</ul>
+<p>Click <b>Create Admin Account</b>. You're now signed in as administrator.</p>
+</div>
+
+<h2>2. Get your OpenAI API key</h2>
+<div class="step"><span class="n">Step 2</span>
+<ol>
+<li>Go to <a href="https://platform.openai.com" target="_blank">platform.openai.com</a> and sign in.</li>
+<li>Open <b>API keys</b> → <b>Create new secret key</b>, copy it (starts with <code>sk-</code>).</li>
+<li>Make sure your OpenAI account has billing/credits enabled, or image generation will fail.</li>
+<li>Paste the key into <b>Settings → OpenAI API Key</b> (next section) and Save.</li>
+</ol>
+<div class="note"><b>Cost:</b> each image is roughly Rs 0.5 (draft), Rs 4–5 (standard), or Rs 15–18 (premium). These are estimates — your real charges appear on your OpenAI billing page.</div>
+</div>
+
+<h2>3. Settings — every field</h2>
+<p>Open the <b>Settings</b> tab (admin only). Fill in and <b>Save Settings</b>.</p>
+<table class="field">
+<tr><td>OpenAI API Key</td><td>Your <code>sk-…</code> key. Once saved it shows as "configured"; leave blank to keep the existing one.</td></tr>
+<tr><td>Brand Name</td><td>Printed on every image (e.g. your shop name).</td></tr>
+<tr><td>Tagline</td><td>Small line under the brand name. Optional.</td></tr>
+<tr><td>Image Model</td><td>Default <code>gpt-image-2</code>. This is the model that edits your photo into a scene. Only change it if OpenAI renames it.</td></tr>
+<tr><td>Image Size</td><td>Default <code>1024x1024</code>. Square works best for catalog/social.</td></tr>
+<tr><td>Default Quality</td><td>Draft / Standard / Premium. Higher = better and slower (and costlier).</td></tr>
+<tr><td>Default Logo Position</td><td>Where the logo + brand text sit (corners, bottom-centre, or none).</td></tr>
+<tr><td>Logo size (% of width)</td><td>How large the logo is, as a percentage of the image width. Default 12.</td></tr>
+<tr><td>Brand name size (% of height)</td><td>Brand-name text size. Default 5.</td></tr>
+<tr><td>Tagline size (% of height)</td><td>Tagline text size. Default 3.</td></tr>
+<tr><td>Default code position</td><td>Default corner for the product code.</td></tr>
+<tr><td>Code size (% of height)</td><td>Product-code text size. Default 3.</td></tr>
+<tr><td>Auto-delete images after (days)</td><td>Old images and their history rows are removed automatically after this many days. <code>0</code> = keep forever. Default 30. The audit log and your logo are always kept.</td></tr>
+</table>
+<div class="note tip"><b>Tip:</b> the three size fields are independent — set each to taste. After changing them, open a generated image and press <b>Re-apply branding</b> to see the new sizes instantly (no new AI cost). There's also a <b>Clean up now</b> button to run retention deletion on demand.</div>
+
+<h2>4. Brand logo</h2>
+<div class="step"><span class="n">Step 3</span>
+<p>In Settings, under <b>Brand Logo</b>, choose an image and click <b>Upload Logo</b>. A <b>square PNG with a transparent background</b> looks best — it's drawn in a circular badge on each image at the size you set above.</p>
+</div>
+
+<h2>5. Users</h2>
+<div class="step"><span class="n">Step 4</span>
+<p>The <b>Users</b> tab (admin only) manages who can sign in.</p>
+<ul>
+<li><b>Add User:</b> enter a username, optional email, a temporary password, and a role (<b>User</b> = create images only; <b>Admin</b> = full access). They'll be forced to set their own password at first login.</li>
+<li><b>Reset PW:</b> generates a one-time temporary password shown in a banner — copy it and share it; the user must change it at next login.</li>
+<li><b>Delete:</b> removes a user (you can't delete yourself).</li>
+</ul>
+</div>
+
+<h2>6. Backup &amp; export</h2>
+<div class="step"><span class="n">Step 5</span>
+<p>The <b>Backup</b> tab offers:</p>
+<ul>
+<li><b>Download Logs (CSV)</b> and <b>Download Images (ZIP)</b> — instant local backups, no Google account needed.</li>
+<li><b>Google Drive Backup</b> (optional): in <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a> create a project, enable the Drive API, create OAuth (Web App) credentials, and add the redirect URI shown on that screen (it ends in <code>/api/drive/callback</code>). Paste the Client ID + Secret, Save, then <b>Connect Drive</b> and authorise. Use <b>Backup Now</b> any time.</li>
+</ul>
+</div>
+
+<h2>7. Audit log</h2>
+<p>The <b>Audit</b> tab (admin only) records security and admin events — logins (including failures), password changes/resets, user create/delete, settings changes, logo uploads, downloads, exports, backups, cleanups, and blocked admin attempts — each with who, when (IST), and the client IP. Use the column filters and click headers to sort. The audit log is never auto-deleted.</p>
+
+<h2>8. Security &amp; recovery</h2>
+<div class="note warn">
+<b>Your login secret lives in Cloudflare, not in the code.</b> Each instance sets a <code>JWT_SECRET</code> as an encrypted Secret in its Cloudflare Pages dashboard (Settings → Variables and Secrets). Never put it in a file in the repo.
+</div>
+<ul>
+<li><b>Keep a second admin</b> so you're never locked out.</li>
+<li>If the only admin is locked out, an account owner can reset the password directly in the database (D1 console) — see your release notes for the exact statement.</li>
+<li>If you ever suspect the secret leaked, rotate it in the dashboard (everyone simply logs in again once).</li>
+</ul>
+
+<h2>9. Troubleshooting</h2>
+<table class="field">
+<tr><td>I deployed but don't see changes</td><td>Open the site in a private/incognito window to confirm, then clear the cache once (reinstall the PWA or clear site data). After that, updates appear on reload automatically.</td></tr>
+<tr><td>Logo looks small or blurry</td><td>Raise the Logo size % in Settings and press Re-apply branding. Use a high-resolution square PNG.</td></tr>
+<tr><td>Branding size didn't change</td><td>Branding is baked in when an image is generated. Change the size, Save, then Re-apply branding (or generate a new image).</td></tr>
+<tr><td>Generation failed / no image</td><td>Check the OpenAI key is valid and the account has credits. The error message on screen states the reason.</td></tr>
+<tr><td>The piece looks altered</td><td>The app edits your real photo to preserve it, but it's still AI — re-generate, or refine the editable prompt before generating.</td></tr>
+</table>
+
+<footer>Jewelry Marketing Agent · Administrator Guide · v8b</footer>
+</div>
+</body>
+</html>

@@ -47,6 +47,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log (timestamp);
 CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity (timestamp);
 
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  created_at TEXT NOT NULL,
+  updated_at TEXT,
+  result_key TEXT,
+  error_msg TEXT,
+  params_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs (created_at);
+
 -- Default settings
 INSERT OR IGNORE INTO settings (key, value) VALUES ('brandName', 'GANESHA CREATION PVT LTD');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('tagline', 'Timeless Elegance, Crafted for You');
@@ -62,3 +75,4 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('driveRefreshToken', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('driveFolderId', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('driveBackupHours', '2');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('driveLastBackup', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('retentionDays', '30');
