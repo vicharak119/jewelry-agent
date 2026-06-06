@@ -1,8 +1,10 @@
--- Jewelry Marketing Agent - D1 Schema (v6)
+-- Jewelry Marketing Agent - D1 Schema (v7)
+-- For a FRESH database. If you already have a live v6 DB, run migrate_v6_to_v7.sql instead.
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
+  email TEXT,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',
   must_change_password INTEGER DEFAULT 1,
@@ -31,6 +33,19 @@ CREATE TABLE IF NOT EXISTS activity (
   cost_estimate TEXT,
   error_msg TEXT
 );
+
+-- NEW in v7: security / admin audit trail
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  timestamp TEXT NOT NULL,
+  actor TEXT,
+  action TEXT NOT NULL,
+  target TEXT,
+  detail TEXT,
+  ip TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log (timestamp);
+CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity (timestamp);
 
 -- Default settings
 INSERT OR IGNORE INTO settings (key, value) VALUES ('brandName', 'GANESHA CREATION PVT LTD');

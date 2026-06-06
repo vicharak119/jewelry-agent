@@ -11,5 +11,9 @@ database_id = "6aab796c-cef4-4589-8ab0-63350f30c7b6"
 binding = "STORAGE"
 bucket_name = "jewelry-agent-storage"
 
-[vars]
-JWT_SECRET = "xK9mP2vL8qR4wN6jB3y"
+# JWT_SECRET is intentionally NOT defined here.
+# It is set as an encrypted Secret in the Cloudflare Pages dashboard
+# (Settings > Variables and Secrets > Add > Type: Secret).
+# Because it is not declared in this file, deploys will not recreate it as a
+# plaintext variable, and Cloudflare will not delete the Secret on deploy.
+# NOTE: until the Secret is set, authentication fails closed by design.
