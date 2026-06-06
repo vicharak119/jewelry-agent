@@ -237,7 +237,7 @@ export async function onRequest(ctx) {
     }
 
     if (method === "GET" && path === "settings/public") {
-      var keys = ["brandName", "tagline", "logoPos", "model", "quality", "size", "style"], ps = {};
+      var keys = ["brandName", "tagline", "logoPos", "model", "quality", "size", "style", "logoPct", "namePct", "taglinePct", "codePos", "codePct"], ps = {};
       for (var pk of keys) ps[pk] = await getS(DB, pk);
       ps.hasApiKey = !!(await getS(DB, "openaiKey"));
       var logo = await R2.get("logo.png");
@@ -289,7 +289,19 @@ export async function onRequest(ctx) {
       var mdl = gb.model || (await getS(DB, "model")) || "gpt-image-2";
       var qual = gb.quality || (await getS(DB, "quality")) || "medium";
       var size = gb.size || (await getS(DB, "size")) || "1024x1024";
-      var gr = await fetch("https://api.openai.com/v1/images/generations", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + gKey }, body: JSON.stringify({ model: mdl, prompt: gb.prompt, n: 1, size: size, quality: qual }) });
+      if (!gb.inputFile) return err("Missing source image reference");
+      // Image-EDIT pipeline: feed the user's ACTUAL photo so the piece is preserved (not recreated from text).
+      var srcObj = await R2.get(gb.inputFile); if (!srcObj) return err("Source image not found in storage");
+      var srcBuf = await srcObj.arrayBuffer();
+      var srcType = (srcObj.httpMetadata && srcObj.httpMetadata.contentType) || "image/png";
+      var srcExt = srcType.indexOf("png") > -1 ? "png" : (srcType.indexOf("webp") > -1 ? "webp" : "jpg");
+      var form = new FormData();
+      form.append("model", mdl);
+      form.append("prompt", gb.prompt);
+      form.append("size", size);
+      form.append("quality", qual);
+      form.append("image", new Blob([srcBuf], { type: srcType }), "source." + srcExt);
+      var gr = await fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { "Authorization": "Bearer " + gKey }, body: form });
       if (!gr.ok) {
         var ge = await gr.json().catch(function () { return {}; }); var gmsg = (ge.error && ge.error.message) || "Error";
         await DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,jewelry_type,scene_json,photo_style,model,quality,status,error_msg)VALUES(?,?,?,?,?,?,?,?,?,'error',?)").bind(crypto.randomUUID(), new Date().toISOString(), user.username, gb.inputFile || "", (gb.analysis && gb.analysis.type) || "", JSON.stringify(gb.scene || {}), gb.style || "", mdl, qual, gmsg).run().catch(function () {});
