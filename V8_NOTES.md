@@ -169,3 +169,22 @@ left in place but unused by the app (harmless; pruned by the retention cleanup).
   guaranteed to finish long jobs. The $5 plan is the dependable way to do background image jobs.
 - Net: synchronous (this version) is the free + reliable choice today; Queues + a consumer Worker
   (ideally on the $5 plan) is the upgrade path if leave-the-page becomes a priority.
+
+## v8.3.2 — full code-review pass
+
+Reviewed backend + frontend end to end. Fixes applied:
+
+1. **Drive OAuth callback was unreachable (real bug).** `/api/drive/callback` sat below the
+   "auth required" gate, but Google redirects the browser there with no token, so it always
+   returned 401 — Drive connect could never finish. Moved it above the gate as a public route
+   (like login). This is the only user-visible bug; Drive backup connect now works.
+2. **OAuth token requests now URL-encode their params** (`code`, `client_id`, `client_secret`,
+   `refresh_token`) in both the callback and refresh-token exchanges. Unencoded values containing
+   "+", "&" or "/" could corrupt the request body.
+3. **Uploaded filrenames are sanitized** before building the R2 key, so a name containing a slash
+   can't create a nested key that breaks owner-scoping and retention cleanup.
+4. **Drive backup CSV fields are now escaped** (quotes/commas/newlines), matching the local CSV export.
+
+No frontend bugs found. Note: the unused async `generate-job`/`job` endpoints + `jobs` table from
+the reverted v8.2 are left in place (inert, pruned by retention); they can be removed later if wanted.
+Version 8.3.2; SW cache `jw-v8f`. No new migration.

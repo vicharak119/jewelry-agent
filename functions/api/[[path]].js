@@ -206,6 +206,18 @@ export async function onRequest(ctx) {
       return json({ token: ltk, mustChangePassword: !!u.must_change_password, role: u.role, username: u.username });
     }
 
+    // Google Drive OAuth redirect target — MUST be reachable without a JWT,
+    // because Google redirects the browser here (no Authorization header).
+    if (method === "GET" && path === "drive/callback") {
+      var code = url.searchParams.get("code"); if (!code) return new Response("No code", { status: 400 });
+      var dcid = await getS(DB, "driveClientId"), dcs = await getS(DB, "driveClientSecret"), dredir = url.origin + "/api/drive/callback";
+      var dr = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "code=" + encodeURIComponent(code) + "&client_id=" + encodeURIComponent(dcid) + "&client_secret=" + encodeURIComponent(dcs) + "&redirect_uri=" + encodeURIComponent(dredir) + "&grant_type=authorization_code" });
+      var dd = await dr.json(); if (!dd.refresh_token) return new Response("No refresh token. Revoke at myaccount.google.com/permissions then retry.", { status: 400 });
+      await setS(DB, "driveRefreshToken", dd.refresh_token);
+      await audit(DB, req, "drive-oauth", "drive.connect", "", "");
+      return new Response("<html><body style='font-family:Georgia,serif;text-align:center;padding:60px'><h2>Drive Connected!</h2><p>You can close this tab.</p></body></html>", { headers: { "Content-Type": "text/html" } });
+    }
+
     // -- auth required below --
     var user = await getAuth(req, env);
     if (!user) return err("Not authenticated", 401);
@@ -341,7 +353,8 @@ export async function onRequest(ctx) {
       var fd = await req.formData(), file = fd.get("image"); if (!file || typeof file === "string") return err("No image");
       var buf = await file.arrayBuffer();
       var imgB = b64FromBuf(buf);
-      var inputKey = "uploads/" + user.username + "/" + Date.now() + "_" + (file.name || "input.jpg");
+      var safeName = (file.name || "input.jpg").split(/[\\/]/).pop().replace(/[^\w.\-]/g, "_");
+      var inputKey = "uploads/" + user.username + "/" + Date.now() + "_" + safeName;
       await R2.put(inputKey, buf, { httpMetadata: { contentType: file.type || "image/jpeg" } });
       var ar = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
@@ -458,16 +471,6 @@ export async function onRequest(ctx) {
       return json({ url: "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + encodeURIComponent(cid) + "&redirect_uri=" + encodeURIComponent(redir) + "&response_type=code&scope=" + encodeURIComponent("https://www.googleapis.com/auth/drive.file") + "&access_type=offline&prompt=consent" });
     }
 
-    if (method === "GET" && path === "drive/callback") {
-      var code = url.searchParams.get("code"); if (!code) return new Response("No code", { status: 400 });
-      var dcid = await getS(DB, "driveClientId"), dcs = await getS(DB, "driveClientSecret"), dredir = url.origin + "/api/drive/callback";
-      var dr = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "code=" + code + "&client_id=" + dcid + "&client_secret=" + dcs + "&redirect_uri=" + encodeURIComponent(dredir) + "&grant_type=authorization_code" });
-      var dd = await dr.json(); if (!dd.refresh_token) return new Response("No refresh token. Revoke at myaccount.google.com/permissions then retry.", { status: 400 });
-      await setS(DB, "driveRefreshToken", dd.refresh_token);
-      await audit(DB, req, "drive-oauth", "drive.connect", "", "");
-      return new Response("<html><body style='font-family:Georgia,serif;text-align:center;padding:60px'><h2>Drive Connected!</h2><p>You can close this tab.</p></body></html>", { headers: { "Content-Type": "text/html" } });
-    }
-
     if (method === "GET" && path === "drive/status") {
       return json({ connected: !!(await getS(DB, "driveRefreshToken")), lastBackup: await getS(DB, "driveLastBackup"), backupHours: (await getS(DB, "driveBackupHours")) || "2" });
     }
@@ -475,13 +478,14 @@ export async function onRequest(ctx) {
     if (method === "POST" && path === "drive/backup-now") {
       var rt = await getS(DB, "driveRefreshToken"); if (!rt) return err("Drive not connected");
       var bcid = await getS(DB, "driveClientId"), bcs = await getS(DB, "driveClientSecret");
-      var tr = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "refresh_token=" + rt + "&client_id=" + bcid + "&client_secret=" + bcs + "&grant_type=refresh_token" });
+      var tr = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "refresh_token=" + encodeURIComponent(rt) + "&client_id=" + encodeURIComponent(bcid) + "&client_secret=" + encodeURIComponent(bcs) + "&grant_type=refresh_token" });
       var td = await tr.json(); if (!td.access_token) return err("Token refresh failed");
       var at = td.access_token, fid = await getS(DB, "driveFolderId");
       if (!fid) { var fr = await fetch("https://www.googleapis.com/drive/v3/files", { method: "POST", headers: { "Authorization": "Bearer " + at, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Jewelry Marketing Agent", mimeType: "application/vnd.google-apps.folder" }) }); var ffd = await fr.json(); fid = ffd.id; await setS(DB, "driveFolderId", fid); }
       var blogs = await DB.prepare("SELECT * FROM activity ORDER BY timestamp DESC LIMIT 1000").all();
       var bcsv = "ID,Timestamp (IST),User,Type,Style,Model,Quality,Status,Cost\n";
-      for (var bl of (blogs.results || [])) bcsv += [bl.id, istFmt(bl.timestamp), bl.username, bl.jewelry_type, bl.photo_style, bl.model, bl.quality, bl.status, bl.cost_estimate].join(",") + "\n";
+      function bce(v) { v = (v == null ? "" : String(v)); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+      for (var bl of (blogs.results || [])) bcsv += [bl.id, istFmt(bl.timestamp), bl.username, bl.jewelry_type, bl.photo_style, bl.model, bl.quality, bl.status, bl.cost_estimate].map(bce).join(",") + "\n";
       var bnd = "----B" + Date.now(), meta = JSON.stringify({ name: "activity_" + new Date().toISOString().slice(0, 10) + ".csv", parents: [fid] });
       var mp = "--" + bnd + "\r\nContent-Type: application/json\r\n\r\n" + meta + "\r\n--" + bnd + "\r\nContent-Type: text/csv\r\n\r\n" + bcsv + "\r\n--" + bnd + "--";
       await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", { method: "POST", headers: { "Authorization": "Bearer " + at, "Content-Type": "multipart/related; boundary=" + bnd }, body: mp });
