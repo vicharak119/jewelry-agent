@@ -473,7 +473,7 @@ function App(){
               h("button",{onClick:function(e){e.stopPropagation();createNew();},style:{position:"absolute",top:4,right:4,background:"rgba(0,0,0,0.7)",border:"none",color:"#fff",width:24,height:24,borderRadius:"50%",cursor:"pointer",fontSize:12}},"\u00D7"),
               h("button",{onClick:function(e){e.stopPropagation();if(fR.current)fR.current.click();},style:{position:"absolute",bottom:6,right:6,background:"rgba(200,169,81,0.92)",border:"none",color:"#111",padding:"4px 10px",borderRadius:6,cursor:"pointer",fontSize:10,fontWeight:"bold"}},"Replace")
             ):h(F,null,h("div",{style:{fontSize:36,opacity:0.5}},"\uD83D\uDCF8"),h("div",{style:{color:t.g,fontSize:13,marginTop:4}},"Drop jewelry photo or tap to upload")),
-            h("input",{ref:fR,type:"file",accept:"image/*",capture:"environment",onChange:function(e){upl(e.target.files[0]);},style:{display:"none"}})
+            h("input",{ref:fR,type:"file",accept:"image/*",onChange:function(e){upl(e.target.files[0]);},style:{display:"none"}})
           ),
           img?h(F,null,
             h("div",{style:{marginTop:10}},h("label",{style:sl},"Style"),
