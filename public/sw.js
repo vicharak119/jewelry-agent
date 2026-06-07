@@ -1,4 +1,4 @@
-var CACHE="jw-v8c";
+var CACHE="jw-v8d";
 self.addEventListener("install",function(e){self.skipWaiting();e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(["/","/manifest.json"]);}));});
 self.addEventListener("activate",function(e){e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));})]));});
 self.addEventListener("fetch",function(e){

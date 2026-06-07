@@ -189,46 +189,13 @@ function App(){
   useEffect(function(){if(!err)return;var id=setTimeout(function(){setErr("");},5000);return function(){clearTimeout(id);};},[err]);
   useEffect(function(){if(!msg)return;var id=setTimeout(function(){setMsg("");},5000);return function(){clearTimeout(id);};},[msg]);
   useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt());},[ph,an,sc,disp,sty,ext,promptDirty]);
-  // Poll the running job; runs server-side so leaving/closing the page is safe.
+  // Client-side progress estimate while a synchronous generation is in flight.
   useEffect(function(){
-    if(!jobId)return;
-    var stop=false,aj={};try{aj=JSON.parse(localStorage.getItem("activeJob")||"{}");}catch(e){}
-    var q=aj.quality||cfg.quality||"medium",est=q==="high"?80000:q==="low"?15000:45000;
-    function tick(){var el=Date.now()-(jobStart||Date.now());setProg(function(prev){if(prev>=90)return prev;return Math.max(prev,Math.min(85,5+(el/est)*80));});}
-    function finishWith(key){
-      setProg(92);setSts("Applying brand...");setPh("brand");
-      var tkn=sessionStorage.getItem("jwt");
-      fetch("/api/file?key="+encodeURIComponent(key),{headers:{Authorization:"Bearer "+tkn}}).then(function(r){if(!r.ok)throw new Error("load failed");return r.blob();}).then(function(bl){
-        var rd=new FileReader();rd.onload=function(){
-          setGenSrc(rd.result);
-          var o={};try{var a2=JSON.parse(localStorage.getItem("activeJob")||"{}");o={lpos:a2.lpos,pcode:a2.pcode,pcodePos:a2.pcodePos};if(a2.sc)setSc(a2.sc);}catch(e){}
-          setProg(100);doBrand(rd.result,o);
-          try{localStorage.removeItem("activeJob");}catch(e){}setJobId(null);
-        };rd.readAsDataURL(bl);
-      }).catch(function(e){setErr("Generated, but couldn't load the image: "+e.message);setPh("scene");try{localStorage.removeItem("activeJob");}catch(_){}setJobId(null);});
-    }
-    function poll(){
-      api("/api/job?id="+encodeURIComponent(jobId)).then(function(j){
-        if(stop)return;setJobStatus(j.status);
-        if(j.status==="done"&&j.resultKey)finishWith(j.resultKey);
-        else if(j.status==="error"){setErr("Generation failed: "+(j.error||"unknown"));setPh("scene");try{localStorage.removeItem("activeJob");}catch(e){}setJobId(null);}
-      }).catch(function(){});
-    }
-    poll();var pi=setInterval(poll,3000),ti=setInterval(tick,500);
-    function onVis(){if(document.visibilityState==="visible")poll();}
-    document.addEventListener("visibilitychange",onVis);
-    return function(){stop=true;clearInterval(pi);clearInterval(ti);document.removeEventListener("visibilitychange",onVis);};
-  },[jobId,jobStart]);
-
-  // Resume an in-flight job after a reload / app reopen.
-  useEffect(function(){
-    if(vw!=="work"||jobId)return;
-    var aj=null;try{aj=JSON.parse(localStorage.getItem("activeJob")||"null");}catch(e){}
-    if(aj&&aj.jobId){
-      setTab("create");setSc(aj.sc||{d:"",b:"",p:"",m:""});setSty(aj.sty||"luxury");setLpos(aj.lpos||"bottom-center");setPcode(aj.pcode||"");setPcodePos(aj.pcodePos||"");setDisp(aj.disp||"mannequin");
-      setJobStart(aj.startedAt||Date.now());setPh("gen");setJobStatus("generating");setProg(20);setSts("Resuming your generation...");setJobId(aj.jobId);
-    }
-  },[vw]);
+    if(ph!=="gen")return;
+    var q=cfg.quality||"medium",est=q==="high"?80000:q==="low"?15000:45000;
+    var ti=setInterval(function(){var el=Date.now()-(jobStart||Date.now());setProg(function(prev){if(prev>=92)return prev;return Math.max(prev,Math.min(92,5+(el/est)*87));});},500);
+    return function(){clearInterval(ti);};
+  },[ph,jobStart,cfg.quality]);
 
   if(vw==="setup"){
     function doSetup(){setErr("");api("/api/auth/setup",{method:"POST",body:JSON.stringify({username:suR.current.value,email:seR.current?seR.current.value:"",password:spR.current.value})}).then(function(d){sessionStorage.setItem("jwt",d.token);setTk(d.token);setUsr({username:d.username,role:d.role});setVw("work");lCfg();}).catch(function(e){setErr(e.message);});}
@@ -316,11 +283,11 @@ function App(){
     if(!an){setErr("Analyze first");return;}
     var pr=(promptText&&promptText.trim())?promptText:buildPrompt();
     var startMs=Date.now();
-    setErr("");setFin(null);setPh("gen");setProg(4);setJobStatus("queued");setJobStart(startMs);setSts("Starting "+qEta()+"...");
-    api("/api/generate-job",{method:"POST",body:JSON.stringify({prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,inputFile:an.inputFile})}).then(function(d){
-      if(!d.jobId)throw new Error("Could not start generation");
-      try{localStorage.setItem("activeJob",JSON.stringify({jobId:d.jobId,sc:sc,sty:sty,lpos:lpos,pcode:pcode,pcodePos:pcodePos,disp:disp,startedAt:startMs,quality:cfg.quality}));}catch(e){}
-      setJobId(d.jobId);
+    setErr("");setFin(null);setPh("gen");setProg(5);setJobStatus("generating");setJobStart(startMs);setSts("Generating \u2014 "+qEta()+". Keep this screen open.");
+    api("/api/generate",{method:"POST",body:JSON.stringify({prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,inputFile:an.inputFile})}).then(function(d){
+      var url=d.b64_json?"data:image/png;base64,"+d.b64_json:d.url;
+      if(!url)throw new Error("No image returned");
+      setProg(96);setSts("Applying brand...");setPh("brand");setGenSrc(url);doBrand(url);
     }).catch(function(e){setErr(e.message);setPh("scene");});
   }
 
@@ -559,7 +526,7 @@ function App(){
             h("div",{style:{fontSize:10,color:t.t2,marginTop:6,display:"flex",justifyContent:"space-between"}},
               h("span",null,jobStatus==="queued"?"Queued":jobStatus==="generating"?"Generating image":(jobStatus==="done"||ph==="brand")?"Adding your branding":"Working"),
               h("span",null,Math.round(prog)+"%")),
-            h("div",{style:{fontSize:10,color:t.t2,marginTop:6,lineHeight:1.5}},"You can switch apps, lock the phone, or close this \u2014 it keeps generating on the server and finishes when you come back.")
+            h("div",{style:{fontSize:10,color:t.t2,marginTop:6,lineHeight:1.5}},"Please keep this screen open while it generates \u2014 leaving the app may cancel it.")
           ):(ph==="analyzing"?h("div",{style:{marginTop:10,padding:"10px",background:dk?"rgba(200,169,81,0.06)":"rgba(176,140,42,0.05)",border:"1px solid "+t.bd,borderRadius:8,fontSize:12,color:t.g,textAlign:"center"}},"\u27F3 "+sts):null)
         ),
         (an||fin||bsy)?h("div",null,

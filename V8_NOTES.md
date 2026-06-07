@@ -142,3 +142,30 @@ Settings size/code fields render; body-part mapping; share helper builds a real 
   the **same browser** (the generated image is always saved server-side regardless, and is in History).
 - Live OpenAI edit calls, the canvas visuals, and Drive OAuth still can't be tested here — verify on
   your deployment.
+
+## v8.3 update — reverted to reliable synchronous generation
+
+**Why:** the v8.2 async/`waitUntil` jobs froze at "generating" on both instances. The `jobs` table
+showed status stuck at `generating` with `updated_at` only ~0.3s after `created_at` and no error —
+i.e. Cloudflare tore the background worker down almost immediately after the response, so the 60–90s
+OpenAI image-edit call never finished. `waitUntil` is not viable for a job this long on this plan.
+
+**Change (frontend only):** `doGen()` now calls the synchronous `POST /api/generate` again (the route
+was always present, unchanged). The request stays open while the worker does the OpenAI call and
+returns the image, then the browser brands it on canvas — the same flow that worked in v6/v7. The
+progress bar is now a pure client-side time estimate (no job polling, no `localStorage` job state).
+Trade-off: the app must stay open during generation. Help-doc wording updated to match.
+
+**No backend change, no new migration.** The `generate-job`/`job` endpoints and the `jobs` table are
+left in place but unused by the app (harmless; pruned by the retention cleanup).
+
+### Verified options for true "leave-the-page" later (researched Jun 2026, from Cloudflare docs)
+- Cloudflare **Queues became free in Feb 2026** (10k ops/day), so a free background path exists — BUT
+  Pages Functions can only **produce** to a queue, not consume. A **separate consumer Worker** is
+  required, bound to the same D1 + R2 + queue. For this two-instance setup that's two extra Workers
+  and two queues.
+- Cloudflare documents **no consumer duration limit on the paid ($5/mo) plan**; on the **free** plan a
+  consumer can hit a wall-clock limit, so a 60–90s image call may be cut off — i.e. free isn't
+  guaranteed to finish long jobs. The $5 plan is the dependable way to do background image jobs.
+- Net: synchronous (this version) is the free + reliable choice today; Queues + a consumer Worker
+  (ideally on the $5 plan) is the upgrade path if leave-the-page becomes a priority.
