@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS activity (
   scene_json TEXT,
   prompt TEXT,
   display_on TEXT,
+  ref_file TEXT,
   photo_style TEXT,
   model TEXT,
   quality TEXT,

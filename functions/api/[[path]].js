@@ -67,7 +67,7 @@ function genTempPw() {
 }
 
 function mapLog(l) {
-  return { id: l.id, timestamp: l.timestamp, timestampIST: istFmt(l.timestamp), username: l.username, inputFile: l.input_file, outputFile: l.output_file, finalFile: l.final_file, jewelryType: l.jewelry_type, sceneJson: l.scene_json, photoStyle: l.photo_style, model: l.model, quality: l.quality, status: l.status, costEstimate: l.cost_estimate, errorMsg: l.error_msg, prompt: l.prompt || "", displayOn: l.display_on || "" };
+  return { id: l.id, timestamp: l.timestamp, timestampIST: istFmt(l.timestamp), username: l.username, inputFile: l.input_file, outputFile: l.output_file, finalFile: l.final_file, jewelryType: l.jewelry_type, sceneJson: l.scene_json, photoStyle: l.photo_style, model: l.model, quality: l.quality, status: l.status, costEstimate: l.cost_estimate, errorMsg: l.error_msg, prompt: l.prompt || "", displayOn: l.display_on || "", refFile: l.ref_file || "" };
 }
 function mapUser(u) {
   return { id: u.id, username: u.username, email: u.email || "", role: u.role, mustChangePassword: !!u.must_change_password, createdAt: u.created_at, createdAtIST: istFmt(u.created_at), createdBy: u.created_by };
@@ -359,8 +359,8 @@ export async function onRequest(ctx) {
       var ar = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
         body: JSON.stringify({ model: "gpt-4o", max_tokens: 1000, messages: [
-          { role: "system", content: 'You are a luxury jewelry photography director. Analyze the jewelry with EXTREME precision - every charm, stone, bead, chain link pattern matters. Return ONLY valid JSON: {"type":"specific type","metal":"metal/finish","elements":"VERY detailed description - count of charms, exact shapes, colors, placement, spacing","style":"design style","chain_type":"chain type","display":"recommended mannequin/display","background":"background","props":"3-4 props comma separated","color_mood":"palette"}' },
-          { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64," + imgB, detail: "high" } }, { type: "text", text: "Analyze this jewelry with extreme detail. Every element matters for accurate reproduction. JSON only." }] },
+          { role: "system", content: 'You are a luxury jewelry photography director. Analyze the jewelry with EXTREME precision - every charm, stone, bead, chain link pattern matters. IMPORTANT: a photo may contain MORE THAN ONE piece (for example a necklace AND matching earrings AND a ring). Identify EVERY distinct piece you can see, including small ones like earrings. Return ONLY valid JSON: {"items":["short name of each distinct piece, e.g. \'gold floral necklace\', \'matching drop earrings\'"],"type":"the primary/most prominent piece type","metal":"metal/finish","elements":"VERY detailed description across ALL pieces - count of charms, exact shapes, colors, placement, spacing","style":"design style","chain_type":"chain type","display":"recommended mannequin/display","background":"background","props":"3-4 props comma separated","color_mood":"palette"}' },
+          { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64," + imgB, detail: "high" } }, { type: "text", text: "Analyze this jewelry with extreme detail. List EVERY distinct piece in 'items' \u2014 do not miss earrings or any small item. Every element matters for accurate reproduction. JSON only." }] },
         ] }),
       });
       if (!ar.ok) { var ae = await ar.json().catch(function () { return {}; }); throw new Error((ae.error && ae.error.message) || "OpenAI error"); }
@@ -408,12 +408,15 @@ export async function onRequest(ctx) {
       form.append("size", size);
       form.append("quality", qual);
       var srcBlob = new Blob([srcBuf], { type: srcType });
+      var refKey = null;
       if (gb.referenceImage) {
         var rmatch = (gb.referenceImage.match(/^data:(image\/[\w.+-]+);base64,/) || []);
         var rtype = rmatch[1] || "image/png";
         var rraw = gb.referenceImage.replace(/^data:[^,]+,/, "");
         var rbuf = Uint8Array.from(atob(rraw), function (c) { return c.charCodeAt(0); });
         var rext = rtype.indexOf("png") > -1 ? "png" : (rtype.indexOf("webp") > -1 ? "webp" : "jpg");
+        refKey = "refs/" + user.username + "/" + Date.now() + "_ref." + rext;
+        await R2.put(refKey, rbuf, { httpMetadata: { contentType: rtype } });
         // First image = the product (primary); second = the background reference.
         form.append("image[]", srcBlob, "source." + srcExt);
         form.append("image[]", new Blob([rbuf], { type: rtype }), "reference." + rext);
@@ -429,7 +432,7 @@ export async function onRequest(ctx) {
       var gd = await gr.json(); var imgB64 = gd.data && gd.data[0] && gd.data[0].b64_json; var outKey = null;
       if (imgB64) { outKey = "outputs/" + user.username + "/" + Date.now() + "_gen.png"; await R2.put(outKey, Uint8Array.from(atob(imgB64), function (c) { return c.charCodeAt(0); }), { httpMetadata: { contentType: "image/png" } }); }
       var cost = qual === "high" ? "~Rs15-18" : qual === "low" ? "~Rs0.5" : "~Rs4-5";
-      await DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,output_file,jewelry_type,scene_json,photo_style,model,quality,status,cost_estimate,prompt,display_on)VALUES(?,?,?,?,?,?,?,?,?,?,'success',?,?,?)").bind(crypto.randomUUID(), new Date().toISOString(), user.username, gb.inputFile || "", outKey || "", (gb.analysis && gb.analysis.type) || "", JSON.stringify(gb.scene || {}), gb.style || "", mdl, qual, cost, gb.prompt || "", gb.display || "").run();
+      await DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,output_file,jewelry_type,scene_json,photo_style,model,quality,status,cost_estimate,prompt,display_on,ref_file)VALUES(?,?,?,?,?,?,?,?,?,?,'success',?,?,?,?)").bind(crypto.randomUUID(), new Date().toISOString(), user.username, gb.inputFile || "", outKey || "", (gb.analysis && gb.analysis.type) || "", JSON.stringify(gb.scene || {}), gb.style || "", mdl, qual, cost, gb.prompt || "", gb.display || "", refKey || "").run();
       return json({ b64_json: imgB64, url: gd.data && gd.data[0] && gd.data[0].url, outputFile: outKey });
     }
 

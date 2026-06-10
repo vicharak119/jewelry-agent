@@ -233,3 +233,28 @@ already exist from v8.4). SW cache `jw-v8h`; version 8.5.0. User guide updated f
 Known/By design: multi-image is sequential (Cloudflare can't reliably run them in the background), so
 3 premium images can take a few minutes with the app open. Reference fidelity depends on the model and
 can't be verified here \u2014 test on real pieces.
+
+## v8.6 — Shape-aware logo
+
+- The logo is no longer forced into a small circle. drawText now **detects the logo's true shape** by
+  trimming transparent padding (alpha bounding box), keeps its real aspect ratio, and lays out the
+  brand text accordingly: **beside** a square/round logo, **below** a wide/rectangular one. Falls back
+  to the image's natural dimensions if pixels can't be read.
+- Help docs updated (setup guide logo advice) + version labels bumped. SW cache jw-v8i; version 8.6.0.
+- No migration. Visual result can't be verified here \u2014 check a real generation after deploy.
+
+## v8.7 — No missed pieces + reference stored per row
+
+- **Multi-piece detection (the missed-earrings fix).** Analysis now returns an `items[]` list of every
+  distinct piece in the photo (necklace, matching earrings, ring, etc.). The Create screen shows it as
+  an editable list \u2014 confirm / fix names / remove / add a missed piece. The prompt then **enumerates
+  every piece** with "all of these MUST appear, preserved exactly," which structurally stops the model
+  from dropping small items.
+- **Reference image stored per row.** When a generation uses a background reference, the reference is
+  saved to R2 (`refs/<user>/...`) and its key recorded on the activity row (`ref_file`). History shows
+  a lazy "Ref" thumbnail you can tap to download.
+- Help docs + version labels updated.
+
+**Migration:** run `migrate_v86_to_v87.sql` once per instance (adds `ref_file`). SW cache jw-v8j; 8.7.0.
+
+Deferred to v8.8: "let AI decide" auto-placement (client-side heuristic). Parked: (3) multiple providers.

@@ -193,7 +193,7 @@ function App(){
   var[cfg,setCfg]=useState({});
   var[img,setImg]=useState(null);var[imgF,setImgF]=useState(null);
   var[ext,setExt]=useState("");var[sty,setSty]=useState("luxury");
-  var[an,setAn]=useState(null);var[sc,setSc]=useState({d:"",b:"",p:"",m:""});
+  var[an,setAn]=useState(null);var[sc,setSc]=useState({d:"",b:"",p:"",m:""});var[items,setItems]=useState([]);
   var[fin,setFin]=useState(null);var[sts,setSts]=useState("");
   var[ph,setPh]=useState("idle");var[lpos,setLpos]=useState("bottom-center");
   var[disps,setDisps]=useState(["mannequin"]);var[refImg,setRefImg]=useState(null);var[refName,setRefName]=useState("");var[batch,setBatch]=useState(null);var[promptText,setPromptText]=useState("");var[promptDirty,setPromptDirty]=useState(false);
@@ -224,7 +224,7 @@ function App(){
   },[tk]);
   useEffect(function(){if(!err)return;var id=setTimeout(function(){setErr("");},5000);return function(){clearTimeout(id);};},[err]);
   useEffect(function(){if(!msg)return;var id=setTimeout(function(){setMsg("");},5000);return function(){clearTimeout(id);};},[msg]);
-  useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt(disps[0]));},[ph,an,sc,disps,sty,ext,refImg,promptDirty]);
+  useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt(disps[0]));},[ph,an,sc,disps,sty,ext,refImg,items,promptDirty]);
   // Client-side progress estimate while a synchronous generation is in flight.
   useEffect(function(){
     if(ph!=="gen"||batch)return;
@@ -287,8 +287,8 @@ function App(){
   var isA=usr&&usr.role==="admin";
   var bsy=ph==="analyzing"||ph==="gen"||ph==="brand";
 
-  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setFin(null);setBatch(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);}
-  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setBatch(null);setRefImg(null);setRefName("");setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);setOvr({});if(fR.current)fR.current.value="";}
+  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setItems([]);setFin(null);setBatch(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);}
+  function createNew(){setImg(null);setImgF(null);setAn(null);setItems([]);setFin(null);setBatch(null);setRefImg(null);setRefName("");setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);setOvr({});if(fR.current)fR.current.value="";}
   function pickRef(f){if(!f)return;var rd=new FileReader();rd.onload=function(){setRefImg(rd.result);setRefName(f.name||"reference");};rd.onerror=function(){setErr("Could not read the reference image");};rd.readAsDataURL(f);}
 
   function doAnalyze(){
@@ -297,6 +297,7 @@ function App(){
     var fd=new FormData();fd.append("image",imgF);
     api("/api/analyze",{method:"POST",body:fd}).then(function(d){
       var a=d.analysis;setAn(Object.assign({},a,{inputFile:d.inputFile}));
+      var its=(a.items&&a.items.length)?a.items.slice():(a.type?[a.type]:[]);setItems(its);
       setSc({d:a.display||"white mannequin",b:a.background||sf(sty),p:a.props||"",m:a.color_mood||""});
       setPh("scene");setSts("Review the scene, then generate.");
     }).catch(function(e){setErr(e.message);setPh("idle");});
@@ -312,8 +313,11 @@ function App(){
     var scenePart=refImg
       ?"BACKGROUND \u2014 USE THE REFERENCE: a second reference image is provided. Reproduce its background, setting, surface, colours, props and lighting mood EXACTLY as shown, and place the product naturally into that same scene. Do NOT invent a different background.\n"
       :"SCENE: "+((sc.b&&sc.b.trim())||sf(sty))+". Props: "+((sc.p&&sc.p.trim())||"minimal, tasteful")+". Colour mood: "+((sc.m&&sc.m.trim())||"warm, premium")+".\n";
+    var cleanItems=(items||[]).map(function(x){return (x||"").trim();}).filter(Boolean);
+    var itemsPart=cleanItems.length?("PIECES IN THIS PHOTO \u2014 the photo contains "+cleanItems.length+" jewelry piece"+(cleanItems.length>1?"s":"")+": "+cleanItems.map(function(x,i){return (i+1)+") "+x;}).join("; ")+". EVERY one of these pieces MUST appear in the final image, each preserved exactly. Do NOT omit any piece (especially small items like earrings).\n\n"):"";
     return "Using the provided product photograph as the EXACT subject, create a professional, ultra-realistic luxury jewelry marketing photo.\n\n"
-      +"CRITICAL \u2014 PRESERVE THE PRODUCT EXACTLY: the jewelry shown in the photo must stay identical \u2014 same design, stones, charms, beads, chain/link pattern, metal, colour and proportions. Do NOT redesign, restyle, add, remove, recolour, or rearrange any element. You may ONLY improve clarity, sharpness, focus and lighting on the piece itself.\n\n"
+      +itemsPart
+      +"CRITICAL \u2014 PRESERVE THE PRODUCT EXACTLY: the jewelry shown in the photo must stay identical \u2014 same design, stones, charms, beads, chain/link pattern, metal, colour and proportions. Do NOT redesign, restyle, add, remove, recolour, or rearrange any element. You may ONLY improve clarity, sharpness, focus and lighting on the piece(s) itself.\n\n"
       +"PLACEMENT: "+place+"\n"
       +scenePart
       +"CAMERA & LIGHT: flattering angle, soft diffused studio lighting, shallow depth of field, the jewelry tack-sharp.\n"
@@ -376,31 +380,46 @@ function App(){
     var logoD=Math.round(W*(((sizes&&sizes.logoPct)||12)/100));
     var nameSize=Math.round(H*(((sizes&&sizes.namePct)||5)/100));
     var tagSize=Math.round(H*(((sizes&&sizes.taglinePct)||3)/100));
-    var isB=pos.indexOf("bottom")===0,isL=pos.indexOf("left")>0,isR=pos.indexOf("right")>0,isC=!isL&&!isR;
-    var mg=Math.round(W*0.035),hasLogo=!!logoImg,gap=hasLogo?Math.round(logoD*0.3):0;
+    var mg=Math.round(W*0.035),hasLogo=!!logoImg;
+    // Detect the logo's true shape by trimming transparent padding, then keep its aspect ratio.
+    var lw=0,lh=0,srcX=0,srcY=0,srcW=0,srcH=0,beside=true;
+    if(hasLogo){
+      var nw=logoImg.naturalWidth||logoImg.width||1,nh=logoImg.naturalHeight||logoImg.height||1;
+      srcW=nw;srcH=nh;
+      try{
+        var sW=Math.min(220,nw),sH=Math.max(1,Math.round(nh*sW/nw));
+        var tc=document.createElement("canvas");tc.width=sW;tc.height=sH;
+        var tcx=tc.getContext("2d");tcx.drawImage(logoImg,0,0,sW,sH);
+        var dat=tcx.getImageData(0,0,sW,sH).data,minX=sW,minY=sH,maxX=-1,maxY=-1;
+        for(var yy=0;yy<sH;yy++)for(var xx=0;xx<sW;xx++){if(dat[(yy*sW+xx)*4+3]>16){if(xx<minX)minX=xx;if(xx>maxX)maxX=xx;if(yy<minY)minY=yy;if(yy>maxY)maxY=yy;}}
+        if(maxX>=minX&&maxY>=minY){var scF=nw/sW;srcX=Math.floor(minX*scF);srcY=Math.floor(minY*scF);srcW=Math.ceil((maxX-minX+1)*scF);srcH=Math.ceil((maxY-minY+1)*scF);}
+      }catch(e){}
+      var aspect=srcW/srcH;
+      if(aspect>=1){lw=logoD;lh=Math.round(logoD/aspect);}else{lh=logoD;lw=Math.round(logoD*aspect);}
+      beside=(aspect>=0.8&&aspect<=1.25); // square/round -> text beside; rectangle -> text below
+    }
     ctx.font='bold '+nameSize+'px '+FF;var nameW=ctx.measureText(bn).width;
     ctx.font='italic '+tagSize+'px '+FF;var tagW=tg?ctx.measureText(tg).width:0;
-    var textW=Math.max(nameW,tagW),groupW=(hasLogo?logoD:0)+gap+textW;
-    var blockH=Math.max(hasLogo?logoD:0,nameSize+(tg?tagSize+Math.round(tagSize*0.5):0));
-    var cy=isB?(H-mg-blockH/2):(mg+blockH/2);
-    var startX=isC?(W-groupW)/2:(isL?mg:(W-mg-groupW));
-    var textX=startX+(hasLogo?logoD+gap:0);
+    var textW=Math.max(nameW,tagW),textH=nameSize+(tg?Math.round(tagSize*1.2):0);
+    var gap=hasLogo?Math.round(logoD*0.26):0;
+    var groupW,groupH;
+    if(hasLogo&&!beside){groupW=Math.max(lw,textW);groupH=lh+gap+textH;}
+    else{groupW=(hasLogo?lw+gap:0)+textW;groupH=Math.max(hasLogo?lh:0,textH);}
+    var isB=pos.indexOf("bottom")===0,isL=pos.indexOf("left")>0,isR=pos.indexOf("right")>0,isC=!isL&&!isR;
+    var gx=isC?Math.round((W-groupW)/2):(isL?mg:(W-mg-groupW));
+    var gy=isB?(H-mg-groupH):mg;
     ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
-    if(hasLogo){
-      var lx=startX,ly=cy-logoD/2;
-      ctx.save();
-      ctx.shadowColor="rgba(0,0,0,0.40)";ctx.shadowBlur=Math.round(logoD*0.16);ctx.shadowOffsetY=Math.round(logoD*0.04);
-      ctx.beginPath();ctx.arc(lx+logoD/2,ly+logoD/2,logoD/2,0,Math.PI*2);ctx.closePath();ctx.clip();
-      ctx.drawImage(logoImg,lx,ly,logoD,logoD);
+    function drawLogoAt(dx,dy){ctx.save();ctx.shadowColor="rgba(0,0,0,0.4)";ctx.shadowBlur=Math.round(logoD*0.13);ctx.shadowOffsetY=Math.round(logoD*0.03);ctx.drawImage(logoImg,srcX,srcY,srcW,srcH,dx,dy,lw,lh);ctx.restore();}
+    function drawTextBlock(tx,topY,align){
+      ctx.save();ctx.textAlign=align||"left";ctx.textBaseline="alphabetic";
+      ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=Math.round(nameSize*0.45);ctx.shadowOffsetY=Math.round(nameSize*0.06);
+      ctx.font='bold '+nameSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.98)";ctx.fillText(bn,tx,topY+nameSize);
+      if(tg){ctx.font='italic '+tagSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.9)";ctx.fillText(tg,tx,topY+nameSize+Math.round(tagSize*1.2));}
       ctx.restore();
-      ctx.beginPath();ctx.arc(lx+logoD/2,ly+logoD/2,logoD/2,0,Math.PI*2);ctx.strokeStyle="rgba(255,255,255,0.85)";ctx.lineWidth=Math.max(1.5,logoD*0.018);ctx.stroke();
     }
-    ctx.textAlign="left";ctx.textBaseline="middle";
-    var nameY=tg?(cy-tagSize*0.55):cy;
-    ctx.save();ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=Math.round(nameSize*0.45);ctx.shadowOffsetY=Math.round(nameSize*0.06);
-    ctx.font='bold '+nameSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.98)";ctx.fillText(bn,textX,nameY);
-    if(tg){ctx.font='italic '+tagSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.88)";ctx.fillText(tg,textX,nameY+nameSize*0.55+tagSize*0.65);}
-    ctx.restore();
+    if(hasLogo&&!beside){drawLogoAt(gx+Math.round((groupW-lw)/2),gy);drawTextBlock(gx+Math.round(groupW/2),gy+lh+gap,"center");}
+    else if(hasLogo){drawLogoAt(gx,gy+Math.round((groupH-lh)/2));drawTextBlock(gx+lw+gap,gy+Math.round((groupH-textH)/2),"left");}
+    else{var al=isC?"center":(isR?"right":"left");var tx=isC?Math.round(W/2):(isR?(W-mg):mg);drawTextBlock(tx,gy,al);}
   }
 
   function drawCode(ctx,code,pos,W,H,sizes){
@@ -526,6 +545,7 @@ function App(){
     {key:"status",label:"Status",value:function(r){return r.status;},render:function(r){return h("span",{style:{color:r.status==="success"?t.ok:t.er}},r.status);}},
     {key:"costEstimate",label:"Cost",value:function(r){return r.costEstimate||"-";},dim:true},
     {key:"prompt",label:"Prompt",noSort:true,noFilter:true,render:function(r){return r.prompt?h("button",{onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(r.prompt).then(function(){setMsg("Prompt copied \u2014 paste it into the editable prompt before Generate");}).catch(function(){});},style:mini,title:r.prompt.slice(0,140)+(r.prompt.length>140?"\u2026":"")},"Copy"):h("span",{style:{color:t.t2}},"-");}},
+    {key:"ref",label:"Ref",noSort:true,noFilter:true,render:function(r){return r.refFile?h(Thumb,{k:r.refFile,t:t,onClick:function(){dlFile(r.refFile);}}):h("span",{style:{color:t.t2}},"-");}},
     {key:"images",label:"Files",noSort:true,noFilter:true,render:imgCell}
   ]);
   var auditCols=[
@@ -620,6 +640,16 @@ function App(){
                 })
               )
             )
+          ):null,
+          ph==="scene"?h("div",{style:Object.assign({},sc2,{marginTop:10,background:dk?"rgba(150,180,140,0.07)":"rgba(120,150,110,0.07)"})},
+            h("div",{style:{fontSize:11,fontWeight:"bold",color:t.g,letterSpacing:1,marginBottom:6}},"\uD83D\uDC8E PIECES DETECTED ("+items.length+") \u2014 confirm / edit / add"),
+            h("div",{style:{fontSize:10,color:t.t2,marginBottom:6}},"Every piece listed here will be kept in the image. Remove any you don't want, fix names, or add a missed piece."),
+            items.map(function(it,i){
+              return h("div",{key:i,style:{display:"flex",gap:6,marginBottom:5}},
+                h("input",{value:it,onChange:function(e){var v=e.target.value;setItems(function(p){var a=p.slice();a[i]=v;return a;});setPromptDirty(false);},style:Object.assign({},si,{fontSize:12,flex:1})}),
+                h("button",{onClick:function(){setItems(function(p){return p.filter(function(_,j){return j!==i;});});setPromptDirty(false);},title:"Remove",style:Object.assign({},mini,{color:t.er})},"\u2715"));
+            }),
+            h("button",{onClick:function(){setItems(function(p){return p.concat([""]);});setPromptDirty(false);},style:Object.assign({},mini,{marginTop:2})},"+ Add a piece")
           ):null,
           ph==="scene"?h("div",{style:Object.assign({},sc2,{marginTop:10,background:dk?"rgba(200,169,81,0.04)":"rgba(176,140,42,0.04)"})},
             h("div",{style:{fontSize:11,fontWeight:"bold",color:t.g,letterSpacing:1,marginBottom:8}},"\uD83C\uDFAC SCENE \u2014 edit if needed"),
