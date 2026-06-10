@@ -62,6 +62,7 @@ function bodyPartFor(type){
   if(/maang|tikka|head|matha|tiara/.test(type))return "the forehead / hairline";
   return "the appropriate area";
 }
+function dispLabel(v){return v==="body"?"Body":v==="props"?"Props":v==="mannequin"?"Mannequin":(v||"-");}
 function fmtIST(iso){
   if(!iso)return "-";
   var d=new Date(iso); if(isNaN(d.getTime()))return iso;
@@ -195,7 +196,7 @@ function App(){
   var[an,setAn]=useState(null);var[sc,setSc]=useState({d:"",b:"",p:"",m:""});
   var[fin,setFin]=useState(null);var[sts,setSts]=useState("");
   var[ph,setPh]=useState("idle");var[lpos,setLpos]=useState("bottom-center");
-  var[disp,setDisp]=useState("mannequin");var[promptText,setPromptText]=useState("");var[promptDirty,setPromptDirty]=useState(false);
+  var[disps,setDisps]=useState(["mannequin"]);var[refImg,setRefImg]=useState(null);var[refName,setRefName]=useState("");var[batch,setBatch]=useState(null);var[promptText,setPromptText]=useState("");var[promptDirty,setPromptDirty]=useState(false);
   var[pcode,setPcode]=useState("");var[pcodePos,setPcodePos]=useState("");var[genSrc,setGenSrc]=useState(null);
   var[jobId,setJobId]=useState(null);var[jobStatus,setJobStatus]=useState("");var[jobStart,setJobStart]=useState(0);var[prog,setProg]=useState(0);
   var[ovr,setOvr]=useState({});
@@ -223,14 +224,14 @@ function App(){
   },[tk]);
   useEffect(function(){if(!err)return;var id=setTimeout(function(){setErr("");},5000);return function(){clearTimeout(id);};},[err]);
   useEffect(function(){if(!msg)return;var id=setTimeout(function(){setMsg("");},5000);return function(){clearTimeout(id);};},[msg]);
-  useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt());},[ph,an,sc,disp,sty,ext,promptDirty]);
+  useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt(disps[0]));},[ph,an,sc,disps,sty,ext,refImg,promptDirty]);
   // Client-side progress estimate while a synchronous generation is in flight.
   useEffect(function(){
-    if(ph!=="gen")return;
+    if(ph!=="gen"||batch)return;
     var q=cfg.quality||"medium",est=q==="high"?80000:q==="low"?15000:45000;
     var ti=setInterval(function(){var el=Date.now()-(jobStart||Date.now());setProg(function(prev){if(prev>=92)return prev;return Math.max(prev,Math.min(92,5+(el/est)*87));});},500);
     return function(){clearInterval(ti);};
-  },[ph,jobStart,cfg.quality]);
+  },[ph,jobStart,cfg.quality,batch]);
 
   if(vw==="setup"){
     function doSetup(){setErr("");api("/api/auth/setup",{method:"POST",body:JSON.stringify({username:suR.current.value,email:seR.current?seR.current.value:"",password:spR.current.value})}).then(function(d){sessionStorage.setItem("jwt",d.token);setTk(d.token);setUsr({username:d.username,role:d.role});setVw("work");lCfg();}).catch(function(e){setErr(e.message);});}
@@ -286,8 +287,9 @@ function App(){
   var isA=usr&&usr.role==="admin";
   var bsy=ph==="analyzing"||ph==="gen"||ph==="brand";
 
-  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setFin(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);}
-  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);setOvr({});if(fR.current)fR.current.value="";}
+  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setFin(null);setBatch(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);}
+  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setBatch(null);setRefImg(null);setRefName("");setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);setOvr({});if(fR.current)fR.current.value="";}
+  function pickRef(f){if(!f)return;var rd=new FileReader();rd.onload=function(){setRefImg(rd.result);setRefName(f.name||"reference");};rd.onerror=function(){setErr("Could not read the reference image");};rd.readAsDataURL(f);}
 
   function doAnalyze(){
     if(!imgF){setErr("Upload image first");return;}
@@ -301,30 +303,69 @@ function App(){
   }
 
   function qEta(){var q=cfg.quality||"medium";return q==="high"?"premium quality, usually ~60\u201390s":q==="low"?"draft quality, ~10\u201320s":"standard quality, ~30\u201360s";}
-  function buildPrompt(){
+  function buildPrompt(dispParam){
     if(!an)return "";
-    var place=disp==="body"?("Show the piece being worn on "+bodyPartFor(an.type)+" of an elegant model \u2014 tasteful and natural, only the relevant body area in frame.")
-      :disp==="props"?"Arrange the piece elegantly on themed props that suit the style. No mannequin or body in frame."
+    var dd=dispParam||disps[0]||"mannequin";
+    var place=dd==="body"?("Show the piece being worn on "+bodyPartFor(an.type)+" of an elegant model \u2014 tasteful and natural, only the relevant body area in frame.")
+      :dd==="props"?"Arrange the piece elegantly on themed props that suit the style. No mannequin or body in frame."
       :("Display the piece on a clean, neutral jewelry "+((sc.d&&sc.d.trim())||"bust / stand")+" appropriate to the item.");
-    return "Using the provided photograph as the EXACT subject, create a professional, ultra-realistic luxury jewelry marketing photo.\n\n"
+    var scenePart=refImg
+      ?"BACKGROUND \u2014 USE THE REFERENCE: a second reference image is provided. Reproduce its background, setting, surface, colours, props and lighting mood EXACTLY as shown, and place the product naturally into that same scene. Do NOT invent a different background.\n"
+      :"SCENE: "+((sc.b&&sc.b.trim())||sf(sty))+". Props: "+((sc.p&&sc.p.trim())||"minimal, tasteful")+". Colour mood: "+((sc.m&&sc.m.trim())||"warm, premium")+".\n";
+    return "Using the provided product photograph as the EXACT subject, create a professional, ultra-realistic luxury jewelry marketing photo.\n\n"
       +"CRITICAL \u2014 PRESERVE THE PRODUCT EXACTLY: the jewelry shown in the photo must stay identical \u2014 same design, stones, charms, beads, chain/link pattern, metal, colour and proportions. Do NOT redesign, restyle, add, remove, recolour, or rearrange any element. You may ONLY improve clarity, sharpness, focus and lighting on the piece itself.\n\n"
       +"PLACEMENT: "+place+"\n"
-      +"SCENE: "+((sc.b&&sc.b.trim())||sf(sty))+". Props: "+((sc.p&&sc.p.trim())||"minimal, tasteful")+". Colour mood: "+((sc.m&&sc.m.trim())||"warm, premium")+".\n"
+      +scenePart
       +"CAMERA & LIGHT: flattering angle, soft diffused studio lighting, shallow depth of field, the jewelry tack-sharp.\n"
       +"COMPOSITION: keep the edges relatively clear. Do NOT add any text, watermark or logo into the image."
       +(ext?("\nExtra: "+ext):"");
   }
   function doGen(rebuild){
     if(!an){setErr("Analyze first");return;}
-    var pr=rebuild?buildPrompt():((promptText&&promptText.trim())?promptText:buildPrompt());
+    var d0=disps[0]||"mannequin";
+    var pr=rebuild?buildPrompt(d0):((promptText&&promptText.trim())?promptText:buildPrompt(d0));
     if(rebuild){setPromptText(pr);setPromptDirty(false);}
     var startMs=Date.now();
-    setErr("");setFin(null);setPh("gen");setProg(5);setJobStatus("generating");setJobStart(startMs);setSts("Generating \u2014 "+qEta()+". Keep this screen open.");
-    api("/api/generate",{method:"POST",body:JSON.stringify({prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:disp,inputFile:an.inputFile})}).then(function(d){
+    setErr("");setFin(null);setBatch(null);setPh("gen");setProg(5);setJobStatus("generating");setJobStart(startMs);setSts("Generating \u2014 "+qEta()+". Keep this screen open.");
+    var body={prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:d0,inputFile:an.inputFile};
+    if(refImg)body.referenceImage=refImg;
+    api("/api/generate",{method:"POST",body:JSON.stringify(body)}).then(function(d){
       var url=d.b64_json?"data:image/png;base64,"+d.b64_json:d.url;
       if(!url)throw new Error("No image returned");
       setProg(96);setSts("Applying brand...");setPh("brand");setGenSrc(url);doBrand(url);
     }).catch(function(e){setErr(e.message);setPh("scene");});
+  }
+
+  function onGenerate(){
+    if(!an){setErr("Analyze first");return;}
+    if(disps.length<=1){doGen(false);return;}
+    var n=disps.length,per=cfg.quality==="high"?"~Rs15\u201318":cfg.quality==="low"?"~Rs0.5":"~Rs4\u20135";
+    if(!confirm("You selected "+n+" options: "+disps.map(dispLabel).join(", ")+".\n\nThis generates "+n+" separate images \u2014 about "+n+"\u00d7 the time and cost (roughly "+per+" each, so ~"+n+"\u00d7 that total). The app must stay open the whole time.\n\nContinue?"))return;
+    runBatch(disps.slice());
+  }
+
+  function runBatch(list){
+    var results=list.map(function(d){return {disp:d,status:"pending",fin:null,err:null};});
+    setErr("");setFin(null);setGenSrc(null);setBatch(results.slice());setPh("gen");setProg(2);
+    var N=list.length;
+    function step(i){
+      if(i>=N){setPh("done");setProg(100);setSts("Done \u2014 "+N+" images");return;}
+      var d=list[i];
+      results[i]=Object.assign({},results[i],{status:"generating"});setBatch(results.slice());
+      setProg(Math.round((i/N)*100)+3);setSts("Generating "+(i+1)+" of "+N+" \u2014 "+dispLabel(d)+"...");
+      var body={prompt:buildPrompt(d),model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:d,inputFile:an.inputFile};
+      if(refImg)body.referenceImage=refImg;
+      api("/api/generate",{method:"POST",body:JSON.stringify(body)}).then(function(dd){
+        var url=dd.b64_json?"data:image/png;base64,"+dd.b64_json:dd.url;if(!url)throw new Error("No image returned");
+        return brandToDataURL(url,{});
+      }).then(function(fu){
+        results[i]=Object.assign({},results[i],{status:"done",fin:fu});setBatch(results.slice());
+        return api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
+      }).then(function(){step(i+1);}).catch(function(e){
+        results[i]=Object.assign({},results[i],{status:"error",err:e.message});setBatch(results.slice());step(i+1);
+      });
+    }
+    step(0);
   }
 
 
@@ -375,51 +416,60 @@ function App(){
     ctx.restore();
   }
 
+  function brandToDataURL(src,opts){
+    return new Promise(function(resolve,reject){
+      opts=opts||{};
+      var uLpos=opts.lpos!==undefined&&opts.lpos!==null?opts.lpos:lpos;
+      var uCode=opts.pcode!==undefined&&opts.pcode!==null?opts.pcode:pcode;
+      var uCodePos=opts.pcodePos!==undefined&&opts.pcodePos!==null?opts.pcodePos:pcodePos;
+      var pnum=function(o,c,d){var v=parseFloat(o);if(!isNaN(v))return v;v=parseFloat(c);return isNaN(v)?d:v;};
+      var sizes={
+        logoPct:pnum(opts.logoPct!==undefined?opts.logoPct:ovr.logoPct,cfg.logoPct,12),
+        namePct:pnum(opts.namePct!==undefined?opts.namePct:ovr.namePct,cfg.namePct,5),
+        taglinePct:pnum(opts.taglinePct!==undefined?opts.taglinePct:ovr.taglinePct,cfg.taglinePct,3),
+        codePct:pnum(opts.codePct!==undefined?opts.codePct:ovr.codePct,cfg.codePct,3)
+      };
+      var c=cv.current;if(!c){reject(new Error("Canvas unavailable"));return;}
+      var ctx=c.getContext("2d");c.width=1024;c.height=1024;
+      var im=new Image();im.crossOrigin="anonymous";
+      im.onload=function(){
+        ctx.clearRect(0,0,1024,1024);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(im,0,0,1024,1024);
+        var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"",codePos=uCodePos||cfg.codePos||"top-right";
+        function finish(logoImg){
+          ensureFonts().then(function(){
+            if(uLpos!=="none")drawText(ctx,bn,tg,uLpos,logoImg,1024,1024,sizes);
+            if(uCode&&uCode.trim())drawCode(ctx,uCode.trim(),codePos,1024,1024,sizes);
+            resolve(c.toDataURL("image/png"));
+          });
+        }
+        if(uLpos!=="none"&&cfg.logoBase64){var li=new Image();li.onload=function(){finish(li);};li.onerror=function(){finish(null);};li.src=cfg.logoBase64;}
+        else finish(null);
+      };
+      im.onerror=function(){reject(new Error("Could not load generated image"));};
+      im.src=src;
+    });
+  }
   function doBrand(src,opts){
-    opts=opts||{};
-    var uLpos=opts.lpos!==undefined&&opts.lpos!==null?opts.lpos:lpos;
-    var uCode=opts.pcode!==undefined&&opts.pcode!==null?opts.pcode:pcode;
-    var uCodePos=opts.pcodePos!==undefined&&opts.pcodePos!==null?opts.pcodePos:pcodePos;
-    var pnum=function(o,c,d){var v=parseFloat(o);if(!isNaN(v))return v;v=parseFloat(c);return isNaN(v)?d:v;};
-    var sizes={
-      logoPct:pnum(opts.logoPct!==undefined?opts.logoPct:ovr.logoPct,cfg.logoPct,12),
-      namePct:pnum(opts.namePct!==undefined?opts.namePct:ovr.namePct,cfg.namePct,5),
-      taglinePct:pnum(opts.taglinePct!==undefined?opts.taglinePct:ovr.taglinePct,cfg.taglinePct,3),
-      codePct:pnum(opts.codePct!==undefined?opts.codePct:ovr.codePct,cfg.codePct,3)
-    };
-    var c=cv.current;if(!c){setErr("Canvas unavailable");setPh("scene");return;}
-    var ctx=c.getContext("2d");c.width=1024;c.height=1024;
-    var im=new Image();im.crossOrigin="anonymous";
-    im.onload=function(){
-      ctx.clearRect(0,0,1024,1024);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(im,0,0,1024,1024);
-      var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"",codePos=uCodePos||cfg.codePos||"top-right";
-      function finish(logoImg){
-        ensureFonts().then(function(){
-          if(uLpos!=="none")drawText(ctx,bn,tg,uLpos,logoImg,1024,1024,sizes);
-          if(uCode&&uCode.trim())drawCode(ctx,uCode.trim(),codePos,1024,1024,sizes);
-          var fu=c.toDataURL("image/png");setFin(fu);setPh("done");setSts("Ready!");
-          api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
-        });
-      }
-      if(uLpos!=="none"&&cfg.logoBase64){var li=new Image();li.onload=function(){finish(li);};li.onerror=function(){finish(null);};li.src=cfg.logoBase64;}
-      else finish(null);
-    };
-    im.onerror=function(){setErr("Could not load generated image");setPh("scene");};
-    im.src=src;
+    brandToDataURL(src,opts).then(function(fu){
+      setFin(fu);setPh("done");setSts("Ready!");
+      api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
+    }).catch(function(e){setErr(e.message);setPh("scene");});
   }
 
-  function doDl(){if(!fin)return;var a=document.createElement("a");a.href=fin;a.download="jewelry_marketing.png";a.click();}
+  function dlData(durl,name){if(!durl)return;var a=document.createElement("a");a.href=durl;a.download=name||"jewelry_marketing.png";a.click();}
+  function doDl(){dlData(fin,"jewelry_marketing.png");}
 
   // Share the actual image FILE (or download). Never share title/url, which some targets turn into a link.
-  function doShare(){
-    if(!fin)return;
+  function shareData(durl,name){
+    if(!durl)return;
     try{
-      var file=dataURLtoFile(fin,"jewelry_marketing.png");
+      var file=dataURLtoFile(durl,name||"jewelry_marketing.png");
       if(navigator.canShare&&navigator.canShare({files:[file]})){
-        navigator.share({files:[file]}).catch(function(e){if(e&&e.name!=="AbortError")doDl();});
-      }else{doDl();setMsg("Your browser can't share the file directly, so it was downloaded \u2014 share it from your gallery.");}
-    }catch(e){doDl();setMsg("Couldn't open share \u2014 image saved instead.");}
+        navigator.share({files:[file]}).catch(function(e){if(e&&e.name!=="AbortError")dlData(durl,name);});
+      }else{dlData(durl,name);setMsg("Your browser can't share the file directly, so it was downloaded \u2014 share it from your gallery.");}
+    }catch(e){dlData(durl,name);setMsg("Couldn't open share \u2014 image saved instead.");}
   }
+  function doShare(){shareData(fin,"jewelry_marketing.png");}
 
   function uploadLogo(){
     var f=logoR.current&&logoR.current.files[0];if(!f){setErr("Choose a logo image first");return;}
@@ -513,7 +563,7 @@ function App(){
         h("span",{style:{display:"flex",gap:6}},h("button",{onClick:copyReset,style:mini},"Copy"),h("button",{onClick:function(){setResetInfo(null);},style:mini},"Dismiss"))
       ):null,
 
-      tab==="create"?h("div",{className:"create-grid",style:{gridTemplateColumns:(an||fin||bsy)?"1fr 1fr":"1fr"}},
+      tab==="create"?h("div",{className:"create-grid",style:{gridTemplateColumns:(an||fin||bsy||batch)?"1fr 1fr":"1fr"}},
         h("div",null,
           h("div",{onDrop:function(e){e.preventDefault();var f=e.dataTransfer.files[0];if(f&&f.type.indexOf("image")===0)upl(f);},onDragOver:function(e){e.preventDefault();},onClick:function(){if(!img&&fR.current)fR.current.click();},style:{border:"2px dashed "+(img?t.bd:t.g),borderRadius:12,padding:img?0:28,textAlign:"center",cursor:img?"default":"pointer",overflow:"hidden",position:"relative"}},
             img?h("div",{style:{position:"relative"}},h("img",{src:img,style:{width:"100%",borderRadius:10,display:"block"}}),
@@ -530,12 +580,33 @@ function App(){
               );}))
             ),
             h("div",{className:"g2",style:{marginTop:10}},
-              h("div",null,h("label",{style:sl},"Show jewelry on"),h("select",{value:disp,onChange:function(e){setDisp(e.target.value);setPromptDirty(false);},style:si},DISPLAYS.map(function(d){return h("option",{key:d.id,value:d.id},d.n);}))),
+              h("div",null,h("label",{style:sl},"Show jewelry on (pick 1\u20133)"),
+                h("div",{style:{display:"flex",flexDirection:"column",gap:4,marginTop:2}},DISPLAYS.map(function(d){
+                  var on=disps.indexOf(d.id)>-1;
+                  return h("button",{key:d.id,onClick:function(){
+                    setPromptDirty(false);
+                    setDisps(function(p){var has=p.indexOf(d.id)>-1;if(has){if(p.length===1)return p;return p.filter(function(x){return x!==d.id;});}return p.concat([d.id]);});
+                  },style:{textAlign:"left",fontSize:12,padding:"7px 9px",borderRadius:7,cursor:"pointer",border:"1px solid "+(on?t.g:t.bd),background:on?(dk?"rgba(200,169,81,0.14)":"rgba(176,140,42,0.1)"):"transparent",color:on?t.g:t.tx}},(on?"\u2611 ":"\u2610 ")+d.n);
+                })),
+                disps.length>1?h("div",{style:{fontSize:9,color:t.t2,marginTop:3}},disps.length+" selected \u2014 makes "+disps.length+" images"):null
+              ),
               h("div",null,h("label",{style:sl},"Logo Position"),h("select",{value:lpos,onChange:function(e){setLpos(e.target.value);},style:si},POSS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
             ),
             h("div",{className:"g2",style:{marginTop:10}},
               h("div",null,h("label",{style:sl},"Product code (optional)"),h("input",{value:pcode,onChange:function(e){setPcode(e.target.value);},placeholder:"e.g. GC-1042",style:si})),
               h("div",null,h("label",{style:sl},"Code position"),h("select",{value:pcodePos||cfg.codePos||"top-right",onChange:function(e){setPcodePos(e.target.value);},style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
+            ),
+            h("div",{style:{marginTop:10}},
+              h("label",{style:sl},"Background reference (optional)"),
+              refImg
+                ?h("div",{style:{display:"flex",alignItems:"center",gap:8,marginTop:2}},
+                   h("img",{src:refImg,style:{width:46,height:46,objectFit:"cover",borderRadius:6,border:"1px solid "+t.bd}}),
+                   h("span",{style:{fontSize:11,color:t.t2,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},refName||"reference image"),
+                   h("button",{onClick:function(){setRefImg(null);setRefName("");setPromptDirty(false);},style:mini},"Remove"))
+                :h("label",{style:{display:"block",marginTop:2,border:"1px dashed "+t.bd,borderRadius:8,padding:"9px 10px",fontSize:12,color:t.t2,cursor:"pointer",textAlign:"center"}},
+                   "\uD83D\uDDBC Tap to upload a background to reuse",
+                   h("input",{type:"file",accept:"image/*",onChange:function(e){pickRef(e.target.files[0]);setPromptDirty(false);e.target.value="";},style:{display:"none"}})),
+              h("div",{style:{fontSize:9,color:t.t2,marginTop:3}},"If set, the AI reuses this exact background; if empty, it builds its own scene.")
             ),
             h("div",{style:{marginTop:10}},h("label",{style:sl},"Extra Instructions (optional)"),h("textarea",{value:ext,onChange:function(e){setExt(e.target.value);},rows:2,placeholder:"e.g. 'rose petals', 'square crop'...",style:Object.assign({},si,{resize:"vertical"})})),
             h("div",{style:{marginTop:10}},
@@ -570,15 +641,16 @@ function App(){
             h("div",{style:{fontSize:10,color:t.t2,marginTop:4}},"This exact text is sent to the AI. Edit it freely, or copy it to use in another tool.")
           ):null,
           img&&ph==="idle"?h("button",{onClick:doAnalyze,style:Object.assign({},sb(true),{width:"100%",marginTop:10,padding:13,fontSize:14})},"\u2728 Create Marketing Image"):null,
-          ph==="scene"?h("button",{onClick:function(){doGen(false);},style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},"\uD83C\uDFA8 Generate \u2014 "+(cfg.quality==="high"?"premium, ~60\u201390s":cfg.quality==="low"?"draft, ~10\u201320s":"standard, ~30\u201360s")):null,
+          ph==="scene"?h("button",{onClick:onGenerate,style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},disps.length>1?("\uD83C\uDFA8 Generate "+disps.length+" images \u2014 ~"+disps.length+"\u00d7 cost/time"):("\uD83C\uDFA8 Generate \u2014 "+(cfg.quality==="high"?"premium, ~60\u201390s":cfg.quality==="low"?"draft, ~10\u201320s":"standard, ~30\u201360s"))):null,
           ph==="done"?h("div",{style:{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}},
             h("button",{onClick:createNew,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDCC4 Create New"),
-            h("button",{onClick:function(){doGen(true);},style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD04 Regenerate with same input"),
-            genSrc?h("button",{onClick:function(){if(genSrc){setPh("brand");setSts("Re-applying branding...");doBrand(genSrc);}},style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83C\uDFF7 Re-apply branding"):null,
-            h("button",{onClick:doDl,style:Object.assign({},sb(true),{flex:"1 1 45%"})},"\uD83D\uDCE5 Save"),
-            CAN_SHARE_FILES
+            h("button",{onClick:function(){if(batch)runBatch(disps.slice());else doGen(true);},style:Object.assign({},sb(false),{flex:"1 1 45%"})},batch?"\uD83D\uDD04 Regenerate all":"\uD83D\uDD04 Regenerate with same input"),
+            (!batch&&genSrc)?h("button",{onClick:function(){if(genSrc){setPh("brand");setSts("Re-applying branding...");doBrand(genSrc);}},style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83C\uDFF7 Re-apply branding"):null,
+            !batch?h("button",{onClick:doDl,style:Object.assign({},sb(true),{flex:"1 1 45%"})},"\uD83D\uDCE5 Save"):null,
+            !batch?(CAN_SHARE_FILES
               ?h("button",{onClick:doShare,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD17 Share")
-              :h("button",{disabled:true,title:"This browser can't share image files. Use Chrome, or tap Save and share from your gallery.",style:Object.assign({},sb(false),{flex:"1 1 45%",opacity:0.45,cursor:"not-allowed"})},"\uD83D\uDD17 Share (use Chrome)")
+              :h("button",{disabled:true,title:"This browser can't share image files. Use Chrome, or tap Save and share from your gallery.",style:Object.assign({},sb(false),{flex:"1 1 45%",opacity:0.45,cursor:"not-allowed"})},"\uD83D\uDD17 Share (use Chrome)")):null,
+            batch?h("div",{style:{fontSize:10,color:t.t2,flex:"1 1 100%",marginTop:2}},"Save / Share each image from the panel on the right."):null
           ):null,
           (ph==="gen"||ph==="brand")?h("div",{style:Object.assign({},sc2,{marginTop:10})},
             h("div",{style:{fontSize:12,color:t.g,marginBottom:6}},sts||"Working..."),
@@ -589,10 +661,22 @@ function App(){
             h("div",{style:{fontSize:10,color:t.t2,marginTop:6,lineHeight:1.5}},"Please keep this screen open while it generates \u2014 leaving the app may cancel it.")
           ):(ph==="analyzing"?h("div",{style:{marginTop:10,padding:"10px",background:dk?"rgba(200,169,81,0.06)":"rgba(176,140,42,0.05)",border:"1px solid "+t.bd,borderRadius:8,fontSize:12,color:t.g,textAlign:"center"}},"\u27F3 "+sts):null)
         ),
-        (an||fin||bsy)?h("div",null,
+        (an||fin||bsy||batch)?h("div",null,
           an?h("div",{style:sc2},h("div",{style:{fontSize:10,fontWeight:"bold",color:t.g,marginBottom:4}},"IDENTIFIED"),h("div",{style:{fontSize:12}},an.type+" | "+an.metal+" | "+an.style),an.elements?h("div",{style:{fontSize:11,color:t.t2,marginTop:4}},an.elements):null):null,
-          fin?h("div",{style:{borderRadius:12,overflow:"hidden",border:"1px solid "+t.bd}},h("img",{src:fin,style:{width:"100%",display:"block"}})):null,
-          bsy&&!fin?h("div",{style:Object.assign({},sc2,{padding:30,textAlign:"center"})},h("div",{style:{fontSize:30}},"\u2728"),h("div",{style:{color:t.g,marginTop:6}},sts)):null
+          batch?batch.map(function(b,i){
+            return h("div",{key:i,style:{marginBottom:10,border:"1px solid "+t.bd,borderRadius:10,overflow:"hidden"}},
+              h("div",{style:{fontSize:11,fontWeight:"bold",color:t.g,padding:"5px 9px",display:"flex",justifyContent:"space-between"}},
+                h("span",null,dispLabel(b.disp)),
+                h("span",{style:{fontSize:10,color:b.status==="error"?t.er:t.t2,fontWeight:"normal"}},b.status==="done"?"\u2713 ready":b.status==="generating"?"generating\u2026":b.status==="error"?"failed":"queued")),
+              b.fin?h("img",{src:b.fin,style:{width:"100%",display:"block"}}):h("div",{style:{padding:24,textAlign:"center",color:t.t2,fontSize:12}},b.status==="error"?("Failed: "+(b.err||"")):(b.status==="generating"?"\u2728 Generating\u2026":"Waiting\u2026")),
+              b.fin?h("div",{style:{display:"flex",gap:6,padding:8}},
+                h("button",{onClick:function(){dlData(b.fin,"jewelry_"+b.disp+".png");},style:Object.assign({},sb(true),{flex:1,padding:"6px 8px",fontSize:12})},"\uD83D\uDCE5 Save"),
+                CAN_SHARE_FILES?h("button",{onClick:function(){shareData(b.fin,"jewelry_"+b.disp+".png");},style:Object.assign({},sb(false),{flex:1,padding:"6px 8px",fontSize:12})},"\uD83D\uDD17 Share"):null
+              ):null
+            );
+          }):null,
+          (!batch&&fin)?h("div",{style:{borderRadius:12,overflow:"hidden",border:"1px solid "+t.bd}},h("img",{src:fin,style:{width:"100%",display:"block"}})):null,
+          (bsy&&!fin&&!batch)?h("div",{style:Object.assign({},sc2,{padding:30,textAlign:"center"})},h("div",{style:{fontSize:30}},"\u2728"),h("div",{style:{color:t.g,marginTop:6}},sts)):null
         ):null
       ):null,
 

@@ -213,3 +213,23 @@ Version 8.3.2; SW cache `jw-v8f`. No new migration.
 
 Deferred to v8.5: (5a) reference-background image, (7) multi-image batch with cost/time warning.
 Parked: (3) multiple AI providers.
+
+## v8.5 — Reference background + multi-image batch
+
+- **(5a) Background reference image.** Optional upload on the Create page. When set, the product photo
+  AND the reference are both sent to the edit endpoint as an `image[]` array, and the prompt switches
+  to "reproduce this background exactly." When empty, behaviour is unchanged (tool builds its own scene).
+  Verified against OpenAI docs: gpt-image models accept multiple input images for edits.
+- **(7) Multi-image batch.** "Show jewelry on" is now a multi-select (pick 1\u20133). Picking more than one
+  shows a confirm dialog spelling out the ~N\u00d7 time and cost, then generates each option **sequentially**
+  (the app must stay open). Each result is its own card on the right with its own Save/Share, and each
+  becomes its own History row (distinguished by the "On" column added in v8.4).
+- Branding refactored into `brandToDataURL()` (promise) so batch images are branded one at a time on
+  the shared canvas; single-image flow unchanged.
+
+**No migration for v8.5** (backend only changed how images are attached; `display_on`/`prompt` columns
+already exist from v8.4). SW cache `jw-v8h`; version 8.5.0. User guide updated for both features.
+
+Known/By design: multi-image is sequential (Cloudflare can't reliably run them in the background), so
+3 premium images can take a few minutes with the app open. Reference fidelity depends on the model and
+can't be verified here \u2014 test on real pieces.

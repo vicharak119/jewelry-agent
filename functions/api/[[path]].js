@@ -407,7 +407,19 @@ export async function onRequest(ctx) {
       form.append("prompt", gb.prompt);
       form.append("size", size);
       form.append("quality", qual);
-      form.append("image", new Blob([srcBuf], { type: srcType }), "source." + srcExt);
+      var srcBlob = new Blob([srcBuf], { type: srcType });
+      if (gb.referenceImage) {
+        var rmatch = (gb.referenceImage.match(/^data:(image\/[\w.+-]+);base64,/) || []);
+        var rtype = rmatch[1] || "image/png";
+        var rraw = gb.referenceImage.replace(/^data:[^,]+,/, "");
+        var rbuf = Uint8Array.from(atob(rraw), function (c) { return c.charCodeAt(0); });
+        var rext = rtype.indexOf("png") > -1 ? "png" : (rtype.indexOf("webp") > -1 ? "webp" : "jpg");
+        // First image = the product (primary); second = the background reference.
+        form.append("image[]", srcBlob, "source." + srcExt);
+        form.append("image[]", new Blob([rbuf], { type: rtype }), "reference." + rext);
+      } else {
+        form.append("image", srcBlob, "source." + srcExt);
+      }
       var gr = await fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { "Authorization": "Bearer " + gKey }, body: form });
       if (!gr.ok) {
         var ge = await gr.json().catch(function () { return {}; }); var gmsg = (ge.error && ge.error.message) || "Error";
