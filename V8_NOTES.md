@@ -258,3 +258,20 @@ can't be verified here \u2014 test on real pieces.
 **Migration:** run `migrate_v86_to_v87.sql` once per instance (adds `ref_file`). SW cache jw-v8j; 8.7.0.
 
 Deferred to v8.8: "let AI decide" auto-placement (client-side heuristic). Parked: (3) multiple providers.
+
+## v8.8 — "Let AI decide" placement + anti-substitution prompt
+
+- **Stronger preservation prompt (from reviewing real outputs).** Real generations were dropping one of
+  a pair of earrings and even swapping the pink-clover earrings for plain gold studs. buildPrompt now
+  explicitly: enforces pairs ("show BOTH, identical"), and forbids substitution ("NEVER substitute,
+  swap or invent a piece; e.g. do not replace clover earrings with plain studs"). This is prompt-level,
+  so it reduces but can't 100% guarantee model fidelity \u2014 the editable pieces list remains the backstop.
+- **"Let AI decide branding placement & size"** toggle on Create. When on, a client-side heuristic scans
+  the finished image and drops the logo+text into the calmest (lowest-variance) region, puts the code in
+  the calmest opposite corner, and uses default sizes \u2014 then locks the manual position/size controls.
+  Free (no extra API call). Falls back to bottom-center if pixels can't be read.
+- Help docs + version labels updated. **No migration.** SW cache jw-v8k; 8.8.0.
+
+Honest limits: the auto-placement is a heuristic (variance-based), not true scene understanding, so it
+can occasionally pick an imperfect spot \u2014 users can switch back to manual anytime. Canvas output and
+model fidelity can't be verified here.
