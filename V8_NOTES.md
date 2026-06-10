@@ -188,3 +188,28 @@ Reviewed backend + frontend end to end. Fixes applied:
 No frontend bugs found. Note: the unused async `generate-job`/`job` endpoints + `jobs` table from
 the reverted v8.2 are left in place (inert, pruned by retention); they can be removed later if wanted.
 Version 8.3.2; SW cache `jw-v8f`. No new migration.
+
+## v8.4 — Create-page + History upgrades
+
+- **(1) Regenerate** now rebuilds the prompt from the current field values (placement, scene, style,
+  extra notes) before calling the API, instead of reusing the stale prompt. Scene-phase "Generate"
+  still respects a manually edited prompt.
+- **(2) Per-image branding sizes on Create** (Logo / Name / Tagline / Code %). They default to the
+  Settings values and can be overridden per image; reset when you start a new piece.
+- **(4) Share button** is now disabled (labelled "Share (use Chrome)" + tooltip) on browsers that
+  can't share files, instead of a second "Save"-style button.
+- **(6) Top Center** added to logo positions; Top/Bottom Center added to product-code positions
+  (canvas now centres the code text).
+- **(5b) History stores the exact prompt** used; a "Copy" button per row copies it so you can paste
+  it into the editable prompt before generating. Requires migration (new `prompt` column).
+- **(5c) History thumbnails** of the final image, lazy-loaded only when a row scrolls into view
+  (authenticated fetch). Click a thumbnail to download.
+- **History pagination** (25/page, Prev/Next) on both History and Audit tables.
+- **"On" column** (Mannequin / Body / Props) so multi-image batches (coming in v8.5) are
+  distinguishable. Requires migration (new `display_on` column).
+
+**Migration:** run `migrate_v83_to_v84.sql` once in each instance's D1 console (adds `prompt` and
+`display_on` to activity). SW cache `jw-v8g`; version 8.4.0.
+
+Deferred to v8.5: (5a) reference-background image, (7) multi-image batch with cost/time warning.
+Parked: (3) multiple AI providers.

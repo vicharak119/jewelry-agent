@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS activity (
   final_file TEXT,
   jewelry_type TEXT,
   scene_json TEXT,
+  prompt TEXT,
+  display_on TEXT,
   photo_style TEXT,
   model TEXT,
   quality TEXT,

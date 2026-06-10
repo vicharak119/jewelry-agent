@@ -31,6 +31,7 @@ input,select,textarea,button{font-family:inherit}
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script>
 const {useState,useRef,useEffect}=React,h=React.createElement,F=React.Fragment;
+var CAN_SHARE_FILES=(function(){try{return !!(typeof navigator!=="undefined"&&navigator.canShare&&navigator.canShare({files:[new File([new Uint8Array([0])],"x.png",{type:"image/png"})]}));}catch(e){return false;}})();
 
 const STYS=[
   {id:"luxury",n:"Luxury",d:"Marble, flowers, gold, silk"},
@@ -40,7 +41,7 @@ const STYS=[
 ];
 const ANGS=["slightly from the left at 30 degrees","from above at 45 degrees","at a gentle 20 degree angle from the right","from a direct overhead perspective","at eye level with subtle tilt","from upper-left at 35 degrees"];
 const LITS=["Soft butterfly lighting","Warm side light from left","Diffused window light from upper-right","Rembrandt lighting with fill","Broad even studio light","Loop lighting from 45 degrees"];
-const POSS=[{id:"bottom-center",n:"Bottom Center"},{id:"bottom-left",n:"Bottom Left"},{id:"bottom-right",n:"Bottom Right"},{id:"top-left",n:"Top Left"},{id:"top-right",n:"Top Right"},{id:"none",n:"No Branding"}];
+const POSS=[{id:"bottom-center",n:"Bottom Center"},{id:"bottom-left",n:"Bottom Left"},{id:"bottom-right",n:"Bottom Right"},{id:"top-center",n:"Top Center"},{id:"top-left",n:"Top Left"},{id:"top-right",n:"Top Right"},{id:"none",n:"No Branding"}];
 function sf(id){return{
   luxury:"Polished cream marble with gold veins. White chrysanthemums in gold-trimmed ceramic dish, vintage brass key, ivory silk drapes. Warm champagne gold palette.",
   minimal:"Pure seamless white background. Soft diffused shadows only. No props. Bright even lighting.",
@@ -49,7 +50,7 @@ function sf(id){return{
 }[id]||"";}
 
 const DISPLAYS=[{id:"mannequin",n:"On mannequin / bust"},{id:"body",n:"On model (body part)"},{id:"props",n:"On themed props"}];
-const CODEPOS=[{id:"top-right",n:"Top Right"},{id:"top-left",n:"Top Left"},{id:"bottom-right",n:"Bottom Right"},{id:"bottom-left",n:"Bottom Left"}];
+const CODEPOS=[{id:"top-right",n:"Top Right"},{id:"top-center",n:"Top Center"},{id:"top-left",n:"Top Left"},{id:"bottom-right",n:"Bottom Right"},{id:"bottom-center",n:"Bottom Center"},{id:"bottom-left",n:"Bottom Left"}];
 function bodyPartFor(type){
   type=(type||"").toLowerCase();
   if(/neck|pendant|chain|choker|mangalsutra|haar|locket/.test(type))return "the neckline / d\u00e9colletage";
@@ -100,12 +101,36 @@ function ensureFonts(){
   return Promise.resolve();
 }
 
+// Lazy thumbnail: fetches the authenticated image only when scrolled into view.
+function Thumb(props){
+  var key=props.k,t=props.t;
+  var sS=useState(""),src=sS[0],setSrc=sS[1];
+  var stS=useState("idle"),stt=stS[0],setStt=stS[1];
+  var ref=useRef(null);
+  useEffect(function(){
+    if(!key)return;var el=ref.current;if(!el)return;var done=false,obj=null;
+    function load(){
+      if(done)return;done=true;setStt("loading");
+      var tk=sessionStorage.getItem("jwt");
+      fetch("/api/file?key="+encodeURIComponent(key),{headers:{Authorization:"Bearer "+tk}}).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){obj=URL.createObjectURL(b);setSrc(obj);setStt("done");}).catch(function(){setStt("err");});
+    }
+    var io=null;
+    if(typeof IntersectionObserver!=="undefined"){io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){load();if(io)io.disconnect();}});});io.observe(el);}
+    else load();
+    return function(){if(io)io.disconnect();if(obj)URL.revokeObjectURL(obj);};
+  },[key]);
+  return h("div",{ref:ref,onClick:props.onClick,title:props.onClick?"Tap to download":"",style:{width:46,height:46,borderRadius:6,overflow:"hidden",border:"1px solid "+t.bd,background:t.ip,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:t.t2,cursor:props.onClick?"pointer":"default",flexShrink:0}},
+    src?h("img",{src:src,style:{width:"100%",height:"100%",objectFit:"cover",display:"block"}}):(stt==="err"?"\u2715":(stt==="loading"?"\u22EF":"\uD83D\uDDBC")));
+}
+
 // Reusable Excel-like table: click headers to sort, per-column filter inputs.
 function DataTable(props){
   var cols=props.columns,rows=props.rows||[],t=props.t;
   var sortKeyS=useState(null),sortKey=sortKeyS[0],setSortKey=sortKeyS[1];
   var sortDirS=useState(1),sortDir=sortDirS[0],setSortDir=sortDirS[1];
   var filtersS=useState({}),filters=filtersS[0],setFilters=filtersS[1];
+  var pageS=useState(0),page=pageS[0],setPage=pageS[1];var PS=props.pageSize||25;
+  var pbtn={padding:"4px 10px",fontSize:11,background:"none",border:"1px solid "+t.bd,borderRadius:6,color:t.g,cursor:"pointer"};
   function val(c,r){return c.value?c.value(r):r[c.key];}
   function sval(c,r){return c.sortValue?c.sortValue(r):val(c,r);}
   function onFilter(k,v){setFilters(function(p){var o=Object.assign({},p);o[k]=v;return o;});}
@@ -124,6 +149,8 @@ function DataTable(props){
       return sortDir*sa.localeCompare(sb);
     });}
   }
+  var total=view.length,pages=Math.max(1,Math.ceil(total/PS)),cur=Math.min(page,pages-1);if(cur<0)cur=0;
+  var paged=view.slice(cur*PS,cur*PS+PS);
   return h("div",{style:{overflowX:"auto"}},
     h("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11}},
       h("thead",null,
@@ -137,14 +164,21 @@ function DataTable(props){
       ),
       h("tbody",null,view.length===0
         ?h("tr",null,h("td",{colSpan:cols.length,style:{padding:16,textAlign:"center",color:t.t2}},"No matching rows"))
-        :view.map(function(r,ri){
+        :paged.map(function(r,ri){
           return h("tr",{key:r.id||ri,style:{borderBottom:"1px solid "+t.bd}},cols.map(function(c){
             return h("td",{key:c.key,style:{padding:"4px 5px",color:c.dim?t.t2:t.tx,whiteSpace:c.wrap?"normal":"nowrap"}},c.render?c.render(r):val(c,r));
           }));
         })
       )
     ),
-    h("div",{style:{fontSize:10,color:t.t2,marginTop:4}},view.length+" of "+rows.length+" rows")
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:6,gap:8,flexWrap:"wrap"}},
+      h("span",{style:{fontSize:10,color:t.t2}},total+" of "+rows.length+" rows"),
+      pages>1?h("span",{style:{display:"flex",alignItems:"center",gap:10}},
+        h("button",{onClick:function(){setPage(Math.max(0,cur-1));},disabled:cur<=0,style:Object.assign({},pbtn,{opacity:cur<=0?0.4:1,cursor:cur<=0?"default":"pointer"})},"\u2039 Prev"),
+        h("span",{style:{fontSize:11,color:t.t2}},"Page "+(cur+1)+" / "+pages),
+        h("button",{onClick:function(){setPage(Math.min(pages-1,cur+1));},disabled:cur>=pages-1,style:Object.assign({},pbtn,{opacity:cur>=pages-1?0.4:1,cursor:cur>=pages-1?"default":"pointer"})},"Next \u203A")
+      ):null
+    )
   );
 }
 
@@ -164,6 +198,7 @@ function App(){
   var[disp,setDisp]=useState("mannequin");var[promptText,setPromptText]=useState("");var[promptDirty,setPromptDirty]=useState(false);
   var[pcode,setPcode]=useState("");var[pcodePos,setPcodePos]=useState("");var[genSrc,setGenSrc]=useState(null);
   var[jobId,setJobId]=useState(null);var[jobStatus,setJobStatus]=useState("");var[jobStart,setJobStart]=useState(0);var[prog,setProg]=useState(0);
+  var[ovr,setOvr]=useState({});
   var[usrs,setUsrs]=useState([]);var[logs,setLogs]=useState([]);var[auds,setAuds]=useState([]);
   var[sett,setSett]=useState({});var[drvSt,setDrvSt]=useState({});
   var cv=useRef(null),fR=useRef(null),unR=useRef(null),pwR=useRef(null),npR=useRef(null),suR=useRef(null),spR=useRef(null),seR=useRef(null),logoR=useRef(null);
@@ -252,7 +287,7 @@ function App(){
   var bsy=ph==="analyzing"||ph==="gen"||ph==="brand";
 
   function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setFin(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);}
-  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);if(fR.current)fR.current.value="";}
+  function createNew(){setImg(null);setImgF(null);setAn(null);setFin(null);setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);setOvr({});if(fR.current)fR.current.value="";}
 
   function doAnalyze(){
     if(!imgF){setErr("Upload image first");return;}
@@ -279,12 +314,13 @@ function App(){
       +"COMPOSITION: keep the edges relatively clear. Do NOT add any text, watermark or logo into the image."
       +(ext?("\nExtra: "+ext):"");
   }
-  function doGen(){
+  function doGen(rebuild){
     if(!an){setErr("Analyze first");return;}
-    var pr=(promptText&&promptText.trim())?promptText:buildPrompt();
+    var pr=rebuild?buildPrompt():((promptText&&promptText.trim())?promptText:buildPrompt());
+    if(rebuild){setPromptText(pr);setPromptDirty(false);}
     var startMs=Date.now();
     setErr("");setFin(null);setPh("gen");setProg(5);setJobStatus("generating");setJobStart(startMs);setSts("Generating \u2014 "+qEta()+". Keep this screen open.");
-    api("/api/generate",{method:"POST",body:JSON.stringify({prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,inputFile:an.inputFile})}).then(function(d){
+    api("/api/generate",{method:"POST",body:JSON.stringify({prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:disp,inputFile:an.inputFile})}).then(function(d){
       var url=d.b64_json?"data:image/png;base64,"+d.b64_json:d.url;
       if(!url)throw new Error("No image returned");
       setProg(96);setSts("Applying brand...");setPh("brand");setGenSrc(url);doBrand(url);
@@ -293,12 +329,12 @@ function App(){
 
 
 
-  function drawText(ctx,bn,tg,pos,logoImg,W,H){
+  function drawText(ctx,bn,tg,pos,logoImg,W,H,sizes){
     if(pos==="none")return;
     var FF='"Noto Sans Devanagari", Georgia, serif';
-    var logoD=Math.round(W*((parseFloat(cfg.logoPct)||12)/100));
-    var nameSize=Math.round(H*((parseFloat(cfg.namePct)||5)/100));
-    var tagSize=Math.round(H*((parseFloat(cfg.taglinePct)||3)/100));
+    var logoD=Math.round(W*(((sizes&&sizes.logoPct)||12)/100));
+    var nameSize=Math.round(H*(((sizes&&sizes.namePct)||5)/100));
+    var tagSize=Math.round(H*(((sizes&&sizes.taglinePct)||3)/100));
     var isB=pos.indexOf("bottom")===0,isL=pos.indexOf("left")>0,isR=pos.indexOf("right")>0,isC=!isL&&!isR;
     var mg=Math.round(W*0.035),hasLogo=!!logoImg,gap=hasLogo?Math.round(logoD*0.3):0;
     ctx.font='bold '+nameSize+'px '+FF;var nameW=ctx.measureText(bn).width;
@@ -326,13 +362,13 @@ function App(){
     ctx.restore();
   }
 
-  function drawCode(ctx,code,pos,W,H){
+  function drawCode(ctx,code,pos,W,H,sizes){
     if(!code)return;
     var FF='"Noto Sans Devanagari", Georgia, serif';
-    var sz=Math.round(H*((parseFloat(cfg.codePct)||3)/100)),mg=Math.round(W*0.035);
+    var sz=Math.round(H*(((sizes&&sizes.codePct)||3)/100)),mg=Math.round(W*0.035);
     ctx.save();ctx.font='bold '+sz+'px '+FF;ctx.textBaseline="alphabetic";
     var w=ctx.measureText(code).width;
-    var x=(pos.indexOf("left")>0)?mg:(W-mg-w);
+    var x=(pos.indexOf("center")>0)?((W-w)/2):((pos.indexOf("left")>0)?mg:(W-mg-w));
     var y=(pos.indexOf("top")===0)?(mg+sz):(H-mg);
     ctx.textAlign="left";ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=Math.round(sz*0.4);ctx.shadowOffsetY=Math.round(sz*0.06);
     ctx.fillStyle="rgba(255,255,255,0.96)";ctx.fillText(code,x,y);
@@ -344,6 +380,13 @@ function App(){
     var uLpos=opts.lpos!==undefined&&opts.lpos!==null?opts.lpos:lpos;
     var uCode=opts.pcode!==undefined&&opts.pcode!==null?opts.pcode:pcode;
     var uCodePos=opts.pcodePos!==undefined&&opts.pcodePos!==null?opts.pcodePos:pcodePos;
+    var pnum=function(o,c,d){var v=parseFloat(o);if(!isNaN(v))return v;v=parseFloat(c);return isNaN(v)?d:v;};
+    var sizes={
+      logoPct:pnum(opts.logoPct!==undefined?opts.logoPct:ovr.logoPct,cfg.logoPct,12),
+      namePct:pnum(opts.namePct!==undefined?opts.namePct:ovr.namePct,cfg.namePct,5),
+      taglinePct:pnum(opts.taglinePct!==undefined?opts.taglinePct:ovr.taglinePct,cfg.taglinePct,3),
+      codePct:pnum(opts.codePct!==undefined?opts.codePct:ovr.codePct,cfg.codePct,3)
+    };
     var c=cv.current;if(!c){setErr("Canvas unavailable");setPh("scene");return;}
     var ctx=c.getContext("2d");c.width=1024;c.height=1024;
     var im=new Image();im.crossOrigin="anonymous";
@@ -352,8 +395,8 @@ function App(){
       var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"",codePos=uCodePos||cfg.codePos||"top-right";
       function finish(logoImg){
         ensureFonts().then(function(){
-          if(uLpos!=="none")drawText(ctx,bn,tg,uLpos,logoImg,1024,1024);
-          if(uCode&&uCode.trim())drawCode(ctx,uCode.trim(),codePos,1024,1024);
+          if(uLpos!=="none")drawText(ctx,bn,tg,uLpos,logoImg,1024,1024,sizes);
+          if(uCode&&uCode.trim())drawCode(ctx,uCode.trim(),codePos,1024,1024,sizes);
           var fu=c.toDataURL("image/png");setFin(fu);setPh("done");setSts("Ready!");
           api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
         });
@@ -419,17 +462,21 @@ function App(){
     return bs.length?h("div",{style:{display:"flex",gap:4}},bs):h("span",{style:{color:t.t2}},"-");
   }
   var histCols=[
+    {key:"preview",label:"",noSort:true,noFilter:true,render:function(r){var k=r.finalFile||r.outputFile;return k?h(Thumb,{k:k,t:t,onClick:function(){dlFile(k);}}):h("span",{style:{color:t.t2}},"-");}},
     {key:"time",label:"Time (IST)",value:function(r){return r.timestampIST;},sortValue:function(r){return r.timestamp;},render:function(r){return r.timestampIST||fmtIST(r.timestamp);},dim:true}
   ];
   if(isA)histCols.push({key:"username",label:"User",value:function(r){return r.username;}});
+  function onLabel(v){return v==="body"?"Body":v==="props"?"Props":v==="mannequin"?"Mannequin":(v||"-");}
   histCols=histCols.concat([
+    {key:"displayOn",label:"On",value:function(r){return onLabel(r.displayOn);},dim:true},
     {key:"jewelryType",label:"Type",value:function(r){return r.jewelryType||"-";}},
     {key:"photoStyle",label:"Style",value:function(r){return r.photoStyle||"-";},dim:true},
     {key:"model",label:"Model",value:function(r){return r.model||"-";},dim:true},
     {key:"quality",label:"Quality",value:function(r){return r.quality||"-";},dim:true},
     {key:"status",label:"Status",value:function(r){return r.status;},render:function(r){return h("span",{style:{color:r.status==="success"?t.ok:t.er}},r.status);}},
     {key:"costEstimate",label:"Cost",value:function(r){return r.costEstimate||"-";},dim:true},
-    {key:"images",label:"Images",noSort:true,noFilter:true,render:imgCell}
+    {key:"prompt",label:"Prompt",noSort:true,noFilter:true,render:function(r){return r.prompt?h("button",{onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(r.prompt).then(function(){setMsg("Prompt copied \u2014 paste it into the editable prompt before Generate");}).catch(function(){});},style:mini,title:r.prompt.slice(0,140)+(r.prompt.length>140?"\u2026":"")},"Copy"):h("span",{style:{color:t.t2}},"-");}},
+    {key:"images",label:"Files",noSort:true,noFilter:true,render:imgCell}
   ]);
   var auditCols=[
     {key:"time",label:"Time (IST)",value:function(r){return r.timestampIST;},sortValue:function(r){return r.timestamp;},render:function(r){return r.timestampIST||fmtIST(r.timestamp);},dim:true},
@@ -490,7 +537,18 @@ function App(){
               h("div",null,h("label",{style:sl},"Product code (optional)"),h("input",{value:pcode,onChange:function(e){setPcode(e.target.value);},placeholder:"e.g. GC-1042",style:si})),
               h("div",null,h("label",{style:sl},"Code position"),h("select",{value:pcodePos||cfg.codePos||"top-right",onChange:function(e){setPcodePos(e.target.value);},style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
             ),
-            h("div",{style:{marginTop:10}},h("label",{style:sl},"Extra Instructions (optional)"),h("textarea",{value:ext,onChange:function(e){setExt(e.target.value);},rows:2,placeholder:"e.g. 'rose petals', 'square crop'...",style:Object.assign({},si,{resize:"vertical"})}))
+            h("div",{style:{marginTop:10}},h("label",{style:sl},"Extra Instructions (optional)"),h("textarea",{value:ext,onChange:function(e){setExt(e.target.value);},rows:2,placeholder:"e.g. 'rose petals', 'square crop'...",style:Object.assign({},si,{resize:"vertical"})})),
+            h("div",{style:{marginTop:10}},
+              h("label",{style:sl},"Branding sizes (%) \u2014 defaults from Settings, change per image if needed"),
+              h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginTop:4}},
+                [["Logo","logoPct","12"],["Name","namePct","5"],["Tagline","taglinePct","3"],["Code","codePct","3"]].map(function(f){
+                  return h("div",{key:f[1]},
+                    h("label",{style:Object.assign({},sl,{fontSize:9,marginBottom:2,letterSpacing:0})},f[0]),
+                    h("input",{type:"number",min:"1",max:"40",value:ovr[f[1]]!==undefined?ovr[f[1]]:((cfg[f[1]]!=null&&cfg[f[1]]!=="")?cfg[f[1]]:f[2]),onChange:function(e){var v=e.target.value;setOvr(function(p){var o=Object.assign({},p);o[f[1]]=v;return o;});},style:Object.assign({},si,{fontSize:12,padding:"7px 8px"})})
+                  );
+                })
+              )
+            )
           ):null,
           ph==="scene"?h("div",{style:Object.assign({},sc2,{marginTop:10,background:dk?"rgba(200,169,81,0.04)":"rgba(176,140,42,0.04)"})},
             h("div",{style:{fontSize:11,fontWeight:"bold",color:t.g,letterSpacing:1,marginBottom:8}},"\uD83C\uDFAC SCENE \u2014 edit if needed"),
@@ -512,13 +570,15 @@ function App(){
             h("div",{style:{fontSize:10,color:t.t2,marginTop:4}},"This exact text is sent to the AI. Edit it freely, or copy it to use in another tool.")
           ):null,
           img&&ph==="idle"?h("button",{onClick:doAnalyze,style:Object.assign({},sb(true),{width:"100%",marginTop:10,padding:13,fontSize:14})},"\u2728 Create Marketing Image"):null,
-          ph==="scene"?h("button",{onClick:doGen,style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},"\uD83C\uDFA8 Generate \u2014 "+(cfg.quality==="high"?"premium, ~60\u201390s":cfg.quality==="low"?"draft, ~10\u201320s":"standard, ~30\u201360s")):null,
+          ph==="scene"?h("button",{onClick:function(){doGen(false);},style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},"\uD83C\uDFA8 Generate \u2014 "+(cfg.quality==="high"?"premium, ~60\u201390s":cfg.quality==="low"?"draft, ~10\u201320s":"standard, ~30\u201360s")):null,
           ph==="done"?h("div",{style:{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}},
             h("button",{onClick:createNew,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDCC4 Create New"),
-            h("button",{onClick:doGen,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD04 Regenerate with same input"),
+            h("button",{onClick:function(){doGen(true);},style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD04 Regenerate with same input"),
             genSrc?h("button",{onClick:function(){if(genSrc){setPh("brand");setSts("Re-applying branding...");doBrand(genSrc);}},style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83C\uDFF7 Re-apply branding"):null,
             h("button",{onClick:doDl,style:Object.assign({},sb(true),{flex:"1 1 45%"})},"\uD83D\uDCE5 Save"),
-            h("button",{onClick:doShare,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD17 Share")
+            CAN_SHARE_FILES
+              ?h("button",{onClick:doShare,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDD17 Share")
+              :h("button",{disabled:true,title:"This browser can't share image files. Use Chrome, or tap Save and share from your gallery.",style:Object.assign({},sb(false),{flex:"1 1 45%",opacity:0.45,cursor:"not-allowed"})},"\uD83D\uDD17 Share (use Chrome)")
           ):null,
           (ph==="gen"||ph==="brand")?h("div",{style:Object.assign({},sc2,{marginTop:10})},
             h("div",{style:{fontSize:12,color:t.g,marginBottom:6}},sts||"Working..."),
