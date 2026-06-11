@@ -41,7 +41,7 @@ const STYS=[
 ];
 const ANGS=["slightly from the left at 30 degrees","from above at 45 degrees","at a gentle 20 degree angle from the right","from a direct overhead perspective","at eye level with subtle tilt","from upper-left at 35 degrees"];
 const LITS=["Soft butterfly lighting","Warm side light from left","Diffused window light from upper-right","Rembrandt lighting with fill","Broad even studio light","Loop lighting from 45 degrees"];
-const POSS=[{id:"bottom-center",n:"Bottom Center"},{id:"bottom-left",n:"Bottom Left"},{id:"bottom-right",n:"Bottom Right"},{id:"top-center",n:"Top Center"},{id:"top-left",n:"Top Left"},{id:"top-right",n:"Top Right"},{id:"none",n:"No Branding"}];
+const POSS=[{id:"bottom-center",n:"Bottom Center"},{id:"bottom-left",n:"Bottom Left"},{id:"bottom-right",n:"Bottom Right"},{id:"top-center",n:"Top Center"},{id:"top-left",n:"Top Left"},{id:"top-right",n:"Top Right"}];
 function sf(id){return{
   luxury:"Polished cream marble with gold veins. White chrysanthemums in gold-trimmed ceramic dish, vintage brass key, ivory silk drapes. Warm champagne gold palette.",
   minimal:"Pure seamless white background. Soft diffused shadows only. No props. Bright even lighting.",
@@ -219,11 +219,14 @@ function App(){
   var[ph,setPh]=useState("idle");var[lpos,setLpos]=useState("bottom-center");
   var[disps,setDisps]=useState(["mannequin"]);var[refImg,setRefImg]=useState(null);var[refName,setRefName]=useState("");var[batch,setBatch]=useState(null);var[promptText,setPromptText]=useState("");var[promptDirty,setPromptDirty]=useState(false);
   var[pcode,setPcode]=useState("");var[pcodePos,setPcodePos]=useState("");var[genSrc,setGenSrc]=useState(null);
+  // v8.9 per-element branding toggles (all default OFF; admin can change defaults in Settings)
+  var[incLogo,setIncLogo]=useState(false);var[incName,setIncName]=useState(false);var[incTagline,setIncTagline]=useState(false);var[incWatermark,setIncWatermark]=useState(false);var[incCode,setIncCode]=useState(false);
+  var togglesInit=useRef(false);
   var[jobId,setJobId]=useState(null);var[jobStatus,setJobStatus]=useState("");var[jobStart,setJobStart]=useState(0);var[prog,setProg]=useState(0);
   var[ovr,setOvr]=useState({});var[aiPlace,setAiPlace]=useState(false);
   var[usrs,setUsrs]=useState([]);var[logs,setLogs]=useState([]);var[auds,setAuds]=useState([]);
   var[sett,setSett]=useState({});var[drvSt,setDrvSt]=useState({});
-  var cv=useRef(null),fR=useRef(null),unR=useRef(null),pwR=useRef(null),npR=useRef(null),suR=useRef(null),spR=useRef(null),seR=useRef(null),logoR=useRef(null);
+  var cv=useRef(null),fR=useRef(null),unR=useRef(null),pwR=useRef(null),npR=useRef(null),suR=useRef(null),spR=useRef(null),seR=useRef(null),logoR=useRef(null),wmR=useRef(null);
 
   var t=dk?{bg:"#0b0b14",bg2:"#141220",cd:"rgba(255,255,255,0.04)",tx:"#e0dcd4",t2:"#999",bd:"rgba(200,169,81,0.18)",g:"#c8a951",gl:"#e8d591",ip:"rgba(0,0,0,0.4)",ib:"rgba(200,169,81,0.2)",er:"#f88",ok:"#8b8"}:{bg:"#f7f5f0",bg2:"#edeae3",cd:"#fff",tx:"#2a2520",t2:"#777",bd:"#e0d5c5",g:"#b08c2a",gl:"#8a6d1b",ip:"#fff",ib:"#d5c9b5",er:"#c33",ok:"#2a8a2a"};
   var si={width:"100%",padding:"10px 14px",background:t.ip,border:"1px solid "+t.ib,borderRadius:8,color:t.tx,fontSize:14,boxSizing:"border-box",outline:"none"};
@@ -243,6 +246,12 @@ function App(){
     if(tk){api("/api/auth/me").then(function(u){setUsr(u);if(u.mustChangePassword)setVw("chpw");else{setVw("work");lCfg();}}).catch(function(){sessionStorage.removeItem("jwt");setTk("");});}
     else{api("/api/auth/needs-setup").then(function(d){if(d.needsSetup)setVw("setup");}).catch(function(){});}
   },[tk]);
+  // Apply admin default branding toggles once, when public settings first arrive. Truthy = "1".
+  useEffect(function(){
+    if(togglesInit.current)return;if(cfg.incLogo===undefined)return;togglesInit.current=true;
+    function on(v){return v==="1"||v===1||v===true;}
+    setIncLogo(on(cfg.incLogo));setIncName(on(cfg.incName));setIncTagline(on(cfg.incTagline));setIncWatermark(on(cfg.incWatermark));setIncCode(on(cfg.incCode));
+  },[cfg]);
   useEffect(function(){if(!err)return;var id=setTimeout(function(){setErr("");},5000);return function(){clearTimeout(id);};},[err]);
   useEffect(function(){if(!msg)return;var id=setTimeout(function(){setMsg("");},5000);return function(){clearTimeout(id);};},[msg]);
   useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt(disps[0]));},[ph,an,sc,disps,sty,ext,refImg,items,promptDirty]);
@@ -345,6 +354,18 @@ function App(){
       +"COMPOSITION: keep the edges relatively clear. Do NOT add any text, watermark or logo into the image."
       +(ext?("\nExtra: "+ext):"");
   }
+  // Snapshot of exactly which branding fields/positions/sizes were used \u2014 logged per History row.
+  function brandingMeta(){
+    var num=function(o,c,d){var v=parseFloat(o);if(!isNaN(v))return v;v=parseFloat(c);return isNaN(v)?d:v;};
+    return {
+      logo:!!incLogo,logoPos:lpos,logoPct:num(ovr.logoPct,cfg.logoPct,12),
+      name:!!incName,namePct:num(ovr.namePct,cfg.namePct,5),
+      tagline:!!incTagline,taglinePct:num(ovr.taglinePct,cfg.taglinePct,3),
+      watermark:!!incWatermark,watermarkPct:num(cfg.watermarkPct,null,60),watermarkOpacity:num(cfg.watermarkOpacity,null,12),
+      code:!!(incCode&&pcode&&pcode.trim()),codeValue:incCode?(pcode||"").trim():"",codePos:pcodePos||cfg.codePos||"top-right",codePct:num(ovr.codePct,cfg.codePct,3),
+      aiPlace:!!aiPlace
+    };
+  }
   function doGen(rebuild){
     if(!an){setErr("Analyze first");return;}
     var d0=disps[0]||"mannequin";
@@ -352,7 +373,7 @@ function App(){
     if(rebuild){setPromptText(pr);setPromptDirty(false);}
     var startMs=Date.now();
     setErr("");setFin(null);setBatch(null);setPh("gen");setProg(5);setJobStatus("generating");setJobStart(startMs);setSts("Generating \u2014 "+qEta()+". Keep this screen open.");
-    var body={prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:d0,inputFile:an.inputFile};
+    var body={prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:d0,inputFile:an.inputFile,branding:brandingMeta()};
     if(refImg)body.referenceImage=refImg;
     api("/api/generate",{method:"POST",body:JSON.stringify(body)}).then(function(d){
       var url=d.b64_json?"data:image/png;base64,"+d.b64_json:d.url;
@@ -378,7 +399,7 @@ function App(){
       var d=list[i];
       results[i]=Object.assign({},results[i],{status:"generating"});setBatch(results.slice());
       setProg(Math.round((i/N)*100)+3);setSts("Generating "+(i+1)+" of "+N+" \u2014 "+dispLabel(d)+"...");
-      var body={prompt:buildPrompt(d),model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:d,inputFile:an.inputFile};
+      var body={prompt:buildPrompt(d),model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:d,inputFile:an.inputFile,branding:brandingMeta()};
       if(refImg)body.referenceImage=refImg;
       api("/api/generate",{method:"POST",body:JSON.stringify(body)}).then(function(dd){
         var url=dd.b64_json?"data:image/png;base64,"+dd.b64_json:dd.url;if(!url)throw new Error("No image returned");
@@ -395,13 +416,18 @@ function App(){
 
 
 
-  function drawText(ctx,bn,tg,pos,logoImg,W,H,sizes){
-    if(pos==="none")return;
+  // v8.9: each of logo / name / tagline can be drawn independently (showLogo/showName/showTagline).
+  function drawText(ctx,bn,tg,pos,logoImg,W,H,sizes,showLogo,showName,showTagline){
+    if(!pos||pos==="none")pos="bottom-center";
     var FF='"Noto Sans Devanagari", Georgia, serif';
+    var hasLogo=!!(showLogo&&logoImg);
+    var nm=showName?(bn||""):"",tgl=showTagline?(tg||""):"";
+    var showText=!!nm||!!tgl;
+    if(!hasLogo&&!showText)return;
     var logoD=Math.round(W*(((sizes&&sizes.logoPct)||12)/100));
     var nameSize=Math.round(H*(((sizes&&sizes.namePct)||5)/100));
     var tagSize=Math.round(H*(((sizes&&sizes.taglinePct)||3)/100));
-    var mg=Math.round(W*0.035),hasLogo=!!logoImg;
+    var mg=Math.round(W*0.035);
     // Detect the logo's true shape by trimming transparent padding, then keep its aspect ratio.
     var lw=0,lh=0,srcX=0,srcY=0,srcW=0,srcH=0,beside=true;
     if(hasLogo){
@@ -419,13 +445,16 @@ function App(){
       if(aspect>=1){lw=logoD;lh=Math.round(logoD/aspect);}else{lh=logoD;lw=Math.round(logoD*aspect);}
       beside=(aspect>=0.8&&aspect<=1.25); // square/round -> text beside; rectangle -> text below
     }
-    ctx.font='bold '+nameSize+'px '+FF;var nameW=ctx.measureText(bn).width;
-    ctx.font='italic '+tagSize+'px '+FF;var tagW=tg?ctx.measureText(tg).width:0;
-    var textW=Math.max(nameW,tagW),textH=nameSize+(tg?Math.round(tagSize*1.2):0);
-    var gap=hasLogo?Math.round(logoD*0.26):0;
+    ctx.font='bold '+nameSize+'px '+FF;var nameW=nm?ctx.measureText(nm).width:0;
+    ctx.font='italic '+tagSize+'px '+FF;var tagW=tgl?ctx.measureText(tgl).width:0;
+    var textW=Math.max(nameW,tagW),textH=(nm?nameSize:0)+(tgl?(nm?Math.round(tagSize*1.2):tagSize):0);
+    var combo=hasLogo&&showText;
+    var gap=combo?Math.round(logoD*0.26):0;
     var groupW,groupH;
-    if(hasLogo&&!beside){groupW=Math.max(lw,textW);groupH=lh+gap+textH;}
-    else{groupW=(hasLogo?lw+gap:0)+textW;groupH=Math.max(hasLogo?lh:0,textH);}
+    if(combo&&!beside){groupW=Math.max(lw,textW);groupH=lh+gap+textH;}
+    else if(combo){groupW=lw+gap+textW;groupH=Math.max(lh,textH);}
+    else if(hasLogo){groupW=lw;groupH=lh;}
+    else{groupW=textW;groupH=textH;}
     var isB=pos.indexOf("bottom")===0,isL=pos.indexOf("left")>0,isR=pos.indexOf("right")>0,isC=!isL&&!isR;
     var gx=isC?Math.round((W-groupW)/2):(isL?mg:(W-mg-groupW));
     var gy=isB?(H-mg-groupH):mg;
@@ -434,13 +463,24 @@ function App(){
     function drawTextBlock(tx,topY,align){
       ctx.save();ctx.textAlign=align||"left";ctx.textBaseline="alphabetic";
       ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=Math.round(nameSize*0.45);ctx.shadowOffsetY=Math.round(nameSize*0.06);
-      ctx.font='bold '+nameSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.98)";ctx.fillText(bn,tx,topY+nameSize);
-      if(tg){ctx.font='italic '+tagSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.9)";ctx.fillText(tg,tx,topY+nameSize+Math.round(tagSize*1.2));}
+      if(nm){ctx.font='bold '+nameSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.98)";ctx.fillText(nm,tx,topY+nameSize);}
+      if(tgl){ctx.font='italic '+tagSize+'px '+FF;ctx.fillStyle="rgba(255,255,255,0.9)";ctx.fillText(tgl,tx,topY+(nm?nameSize+Math.round(tagSize*1.2):tagSize));}
       ctx.restore();
     }
-    if(hasLogo&&!beside){drawLogoAt(gx+Math.round((groupW-lw)/2),gy);drawTextBlock(gx+Math.round(groupW/2),gy+lh+gap,"center");}
-    else if(hasLogo){drawLogoAt(gx,gy+Math.round((groupH-lh)/2));drawTextBlock(gx+lw+gap,gy+Math.round((groupH-textH)/2),"left");}
+    if(combo&&!beside){drawLogoAt(gx+Math.round((groupW-lw)/2),gy);drawTextBlock(gx+Math.round(groupW/2),gy+lh+gap,"center");}
+    else if(combo){drawLogoAt(gx,gy+Math.round((groupH-lh)/2));drawTextBlock(gx+lw+gap,gy+Math.round((groupH-textH)/2),"left");}
+    else if(hasLogo){drawLogoAt(gx,gy);}
     else{var al=isC?"center":(isR?"right":"left");var tx=isC?Math.round(W/2):(isR?(W-mg):mg);drawTextBlock(tx,gy,al);}
+  }
+
+  // v8.9: single, centered, faint watermark image drawn over the photo (under logo/text/code).
+  function drawWatermark(ctx,wmImg,W,H,pct,opacity){
+    var ww=Math.round(W*((pct||60)/100));
+    var nw=wmImg.naturalWidth||wmImg.width||1,nh=wmImg.naturalHeight||wmImg.height||1;
+    var wh=Math.max(1,Math.round(ww*nh/nw));
+    var x=Math.round((W-ww)/2),y=Math.round((H-wh)/2);
+    ctx.save();ctx.globalAlpha=Math.max(0,Math.min(1,(opacity==null?12:opacity)/100));
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(wmImg,x,y,ww,wh);ctx.restore();
   }
 
   function drawCode(ctx,code,pos,W,H,sizes){
@@ -459,9 +499,12 @@ function App(){
   function brandToDataURL(src,opts){
     return new Promise(function(resolve,reject){
       opts=opts||{};
-      var uLpos=opts.lpos!==undefined&&opts.lpos!==null?opts.lpos:lpos;
-      var uCode=opts.pcode!==undefined&&opts.pcode!==null?opts.pcode:pcode;
-      var uCodePos=opts.pcodePos!==undefined&&opts.pcodePos!==null?opts.pcodePos:pcodePos;
+      var pick=function(o,s){return o!==undefined&&o!==null?o:s;};
+      var uLpos=pick(opts.lpos,lpos);
+      var uCode=pick(opts.pcode,pcode);
+      var uCodePos=pick(opts.pcodePos,pcodePos);
+      // Which elements to include (toggles); opts can override for special cases.
+      var sLogo=!!pick(opts.incLogo,incLogo),sName=!!pick(opts.incName,incName),sTag=!!pick(opts.incTagline,incTagline),sWM=!!pick(opts.incWatermark,incWatermark),sCode=!!pick(opts.incCode,incCode);
       var pnum=function(o,c,d){var v=parseFloat(o);if(!isNaN(v))return v;v=parseFloat(c);return isNaN(v)?d:v;};
       var sizes={
         logoPct:pnum(opts.logoPct!==undefined?opts.logoPct:ovr.logoPct,cfg.logoPct,12),
@@ -469,26 +512,36 @@ function App(){
         taglinePct:pnum(opts.taglinePct!==undefined?opts.taglinePct:ovr.taglinePct,cfg.taglinePct,3),
         codePct:pnum(opts.codePct!==undefined?opts.codePct:ovr.codePct,cfg.codePct,3)
       };
+      var wmPct=pnum(cfg.watermarkPct,null,60),wmOp=pnum(cfg.watermarkOpacity,null,12);
       var c=cv.current;if(!c){reject(new Error("Canvas unavailable"));return;}
       var ctx=c.getContext("2d");c.width=1024;c.height=1024;
       var im=new Image();im.crossOrigin="anonymous";
       im.onload=function(){
         ctx.clearRect(0,0,1024,1024);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(im,0,0,1024,1024);
-        if(opts.aiPlace!==undefined?opts.aiPlace:aiPlace){
-          if(uLpos!=="none")uLpos=pickAutoPos(ctx,1024,1024);
+        var useAi=pick(opts.aiPlace,aiPlace);
+        var hasBrandText=sLogo||sName||sTag;
+        if(useAi){
+          if(hasBrandText)uLpos=pickAutoPos(ctx,1024,1024);
           sizes={logoPct:12,namePct:5,taglinePct:3,codePct:3};
         }
-        var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"",codePos=uCodePos||cfg.codePos||"top-right";
-        if((opts.aiPlace!==undefined?opts.aiPlace:aiPlace)&&uCode&&uCode.trim())codePos=pickCodePos(ctx,1024,1024,uLpos);
-        function finish(logoImg){
+        var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"";
+        var codeText=sCode?(uCode||"").trim():"";
+        var codePos=uCodePos||cfg.codePos||"top-right";
+        if(useAi&&codeText)codePos=pickCodePos(ctx,1024,1024,uLpos);
+        function finish(logoImg,wmImg){
           ensureFonts().then(function(){
-            if(uLpos!=="none")drawText(ctx,bn,tg,uLpos,logoImg,1024,1024,sizes);
-            if(uCode&&uCode.trim())drawCode(ctx,uCode.trim(),codePos,1024,1024,sizes);
+            if(wmImg)drawWatermark(ctx,wmImg,1024,1024,wmPct,wmOp);
+            if(hasBrandText)drawText(ctx,bn,tg,uLpos,logoImg,1024,1024,sizes,sLogo,sName,sTag);
+            if(codeText)drawCode(ctx,codeText,codePos,1024,1024,sizes);
             resolve(c.toDataURL("image/png"));
           });
         }
-        if(uLpos!=="none"&&cfg.logoBase64){var li=new Image();li.onload=function(){finish(li);};li.onerror=function(){finish(null);};li.src=cfg.logoBase64;}
-        else finish(null);
+        function afterLogo(logoImg){
+          if(sWM&&cfg.watermarkBase64){var wi=new Image();wi.onload=function(){finish(logoImg,wi);};wi.onerror=function(){finish(logoImg,null);};wi.src=cfg.watermarkBase64;}
+          else finish(logoImg,null);
+        }
+        if(sLogo&&cfg.logoBase64){var li=new Image();li.onload=function(){afterLogo(li);};li.onerror=function(){afterLogo(null);};li.src=cfg.logoBase64;}
+        else afterLogo(null);
       };
       im.onerror=function(){reject(new Error("Could not load generated image"));};
       im.src=src;
@@ -523,6 +576,13 @@ function App(){
     rd.onerror=function(){setErr("Could not read that file");};
     rd.readAsDataURL(f);
   }
+  function uploadWatermark(){
+    var f=wmR.current&&wmR.current.files[0];if(!f){setErr("Choose a watermark image first");return;}
+    var rd=new FileReader();
+    rd.onload=function(){api("/api/watermark-asset",{method:"POST",body:JSON.stringify({imageData:rd.result})}).then(function(){setMsg("Watermark uploaded");lCfg();lSet();}).catch(function(e){setErr(e.message);});};
+    rd.onerror=function(){setErr("Could not read that file");};
+    rd.readAsDataURL(f);
+  }
 
   function dlAuth(p,fname){
     var tkn=sessionStorage.getItem("jwt");setMsg("Preparing "+fname+"...");
@@ -538,7 +598,8 @@ function App(){
 
   function cleanupNow(){if(!confirm("Delete stored images older than the retention period now? This cannot be undone."))return;setMsg("Cleaning up...");api("/api/cleanup",{method:"POST"}).then(function(d){setMsg(d.message+" ("+(d.deleted||0)+" images removed)");lSet();}).catch(function(e){setErr(e.message);});}
   function saveSettings(){
-    api("/api/settings",{method:"POST",body:JSON.stringify({openaiKey:document.getElementById("s_k").value,brandName:document.getElementById("s_b").value,tagline:document.getElementById("s_t").value,model:document.getElementById("s_m").value,size:document.getElementById("s_sz").value,quality:document.getElementById("s_q").value,logoPos:document.getElementById("s_lp").value,logoPct:document.getElementById("s_logop").value,namePct:document.getElementById("s_namep").value,taglinePct:document.getElementById("s_tagp").value,codePos:document.getElementById("s_codepos").value,codePct:document.getElementById("s_codep").value,retentionDays:document.getElementById("s_ret").value})}).then(function(){setMsg("Settings saved");lCfg();lSet();}).catch(function(e){setErr(e.message);});
+    function chk(id){var el=document.getElementById(id);return el&&el.checked?"1":"0";}
+    api("/api/settings",{method:"POST",body:JSON.stringify({openaiKey:document.getElementById("s_k").value,brandName:document.getElementById("s_b").value,tagline:document.getElementById("s_t").value,model:document.getElementById("s_m").value,size:document.getElementById("s_sz").value,quality:document.getElementById("s_q").value,logoPos:document.getElementById("s_lp").value,logoPct:document.getElementById("s_logop").value,namePct:document.getElementById("s_namep").value,taglinePct:document.getElementById("s_tagp").value,codePos:document.getElementById("s_codepos").value,codePct:document.getElementById("s_codep").value,watermarkPct:document.getElementById("s_wmp").value,watermarkOpacity:document.getElementById("s_wmo").value,incLogo:chk("s_inclogo"),incName:chk("s_incname"),incTagline:chk("s_inctag"),incWatermark:chk("s_incwm"),incCode:chk("s_inccode"),retentionDays:document.getElementById("s_ret").value})}).then(function(){setMsg("Settings saved");lCfg();lSet();}).catch(function(e){setErr(e.message);});
   }
   function saveDrive(){
     api("/api/settings",{method:"POST",body:JSON.stringify({driveClientId:document.getElementById("d_c").value,driveClientSecret:document.getElementById("d_s").value,driveBackupHours:document.getElementById("d_h").value})}).then(function(){setMsg("Drive settings saved");lSet();}).catch(function(e){setErr(e.message);});
@@ -556,6 +617,10 @@ function App(){
     if(r.finalFile)bs.push(h("button",{key:"f",onClick:function(){dlFile(r.finalFile);},style:mini},"Final"));
     return bs.length?h("div",{style:{display:"flex",gap:4}},bs):h("span",{style:{color:t.t2}},"-");
   }
+  // Parse the per-row branding snapshot (v8.9+). Old rows have no branding_json -> {}.
+  function brOf(r){try{return r.brandingJson?JSON.parse(r.brandingJson):{};}catch(e){return {};}}
+  function yn(v){return v?"Yes":"No";}
+  function sceneSummary(r){try{var s=r.sceneJson?JSON.parse(r.sceneJson):{};return [s.d,s.b,s.p,s.m].filter(Boolean).join(" | ");}catch(e){return "";}}
   var histCols=[
     {key:"preview",label:"",noSort:true,noFilter:true,render:function(r){var k=r.finalFile||r.outputFile;return k?h(Thumb,{k:k,t:t,onClick:function(){dlFile(k);}}):h("span",{style:{color:t.t2}},"-");}},
     {key:"time",label:"Time (IST)",value:function(r){return r.timestampIST;},sortValue:function(r){return r.timestamp;},render:function(r){return r.timestampIST||fmtIST(r.timestamp);},dim:true}
@@ -568,8 +633,15 @@ function App(){
     {key:"photoStyle",label:"Style",value:function(r){return r.photoStyle||"-";},dim:true},
     {key:"model",label:"Model",value:function(r){return r.model||"-";},dim:true},
     {key:"quality",label:"Quality",value:function(r){return r.quality||"-";},dim:true},
+    {key:"imageSize",label:"Size",value:function(r){return r.imageSize||"-";},dim:true},
+    {key:"brLogo",label:"Logo",value:function(r){var b=brOf(r);return b.logo?(b.logoPos||"on"):"off";},dim:true},
+    {key:"brName",label:"Name",value:function(r){return yn(brOf(r).name);},dim:true},
+    {key:"brTag",label:"Tagline",value:function(r){return yn(brOf(r).tagline);},dim:true},
+    {key:"brWm",label:"W.mark",value:function(r){return yn(brOf(r).watermark);},dim:true},
+    {key:"brCode",label:"Code",value:function(r){var b=brOf(r);return b.code?(b.codeValue||"yes"):"off";},dim:true},
     {key:"status",label:"Status",value:function(r){return r.status;},render:function(r){return h("span",{style:{color:r.status==="success"?t.ok:t.er}},r.status);}},
     {key:"costEstimate",label:"Cost",value:function(r){return r.costEstimate||"-";},dim:true},
+    {key:"scene",label:"Scene",noSort:true,noFilter:true,render:function(r){var sv=sceneSummary(r);return sv?h("button",{onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(sv).then(function(){setMsg("Scene copied");}).catch(function(){});},style:mini,title:sv.slice(0,140)+(sv.length>140?"\u2026":"")},"Copy"):h("span",{style:{color:t.t2}},"-");}},
     {key:"prompt",label:"Prompt",noSort:true,noFilter:true,render:function(r){return r.prompt?h("button",{onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(r.prompt).then(function(){setMsg("Prompt copied \u2014 paste it into the editable prompt before Generate");}).catch(function(){});},style:mini,title:r.prompt.slice(0,140)+(r.prompt.length>140?"\u2026":"")},"Copy"):h("span",{style:{color:t.t2}},"-");}},
     {key:"ref",label:"Ref",noSort:true,noFilter:true,render:function(r){return r.refFile?h(Thumb,{k:r.refFile,t:t,onClick:function(){dlFile(r.refFile);}}):h("span",{style:{color:t.t2}},"-");}},
     {key:"images",label:"Files",noSort:true,noFilter:true,render:imgCell}
@@ -625,6 +697,18 @@ function App(){
                 h("div",{style:{fontSize:10,color:t.t2}},s.d)
               );}))
             ),
+            h("div",{style:{marginTop:10,padding:"10px 11px",borderRadius:8,border:"1px solid "+t.bd}},
+              h("label",{style:sl},"Include in image (all off by default)"),
+              h("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}},
+                [["Logo",incLogo,setIncLogo],["Brand name",incName,setIncName],["Tagline",incTagline,setIncTagline],["Watermark",incWatermark,setIncWatermark],["Product code",incCode,setIncCode]].map(function(it){
+                  var on=it[1],setOn=it[2];
+                  return h("button",{key:it[0],onClick:function(){setOn(function(v){return !v;});},style:{fontSize:12,padding:"6px 10px",borderRadius:7,cursor:"pointer",border:"1px solid "+(on?t.g:t.bd),background:on?(dk?"rgba(200,169,81,0.14)":"rgba(176,140,42,0.1)"):"transparent",color:on?t.g:t.tx}},(on?"\u2611 ":"\u2610 ")+it[0]);
+                })
+              ),
+              (incLogo&&!cfg.logoBase64)?h("div",{style:{fontSize:9,color:t.er,marginTop:5}},"\u26a0 No logo uploaded yet \u2014 add one in Settings."):null,
+              (incWatermark&&!cfg.watermarkBase64)?h("div",{style:{fontSize:9,color:t.er,marginTop:5}},"\u26a0 No watermark image uploaded \u2014 ask an admin to add one in Settings."):null,
+              (incLogo||incName||incTagline)?h("div",{style:{fontSize:9,color:t.t2,marginTop:5}},"Logo / name / tagline share the position below. Watermark is always centered & faint."):null
+            ),
             h("div",{className:"g2",style:{marginTop:10}},
               h("div",null,h("label",{style:sl},"Show jewelry on (pick 1\u20133)"),
                 h("div",{style:{display:"flex",flexDirection:"column",gap:4,marginTop:2}},DISPLAYS.map(function(d){
@@ -636,7 +720,7 @@ function App(){
                 })),
                 disps.length>1?h("div",{style:{fontSize:9,color:t.t2,marginTop:3}},disps.length+" selected \u2014 makes "+disps.length+" images"):null
               ),
-              h("div",{style:aiPlace?{opacity:0.4}:null},h("label",{style:sl},"Logo Position"),h("select",{value:lpos,disabled:aiPlace,onChange:function(e){setLpos(e.target.value);},style:si},POSS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
+              h("div",{style:aiPlace?{opacity:0.4}:null},h("label",{style:sl},"Logo / name / tagline position"),h("select",{value:lpos,disabled:aiPlace,onChange:function(e){setLpos(e.target.value);},style:si},POSS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
             ),
             h("div",{style:{marginTop:10,padding:"9px 11px",borderRadius:8,border:"1px solid "+(aiPlace?t.g:t.bd),background:aiPlace?(dk?"rgba(200,169,81,0.12)":"rgba(176,140,42,0.08)"):"transparent"}},
               h("button",{onClick:function(){setAiPlace(function(v){return !v;});},style:{display:"flex",alignItems:"center",gap:8,width:"100%",background:"none",border:"none",cursor:"pointer",color:aiPlace?t.g:t.tx,fontSize:12.5,textAlign:"left",padding:0}},
@@ -644,7 +728,7 @@ function App(){
               h("div",{style:{fontSize:9,color:t.t2,marginTop:4}},aiPlace?"On \u2014 logo & code position and all sizes are auto-chosen per image (locked below).":"Off \u2014 you set position & size manually below.")
             ),
             h("div",{className:"g2",style:{marginTop:10}},
-              h("div",null,h("label",{style:sl},"Product code (optional)"),h("input",{value:pcode,onChange:function(e){setPcode(e.target.value);},placeholder:"e.g. GC-1042",style:si})),
+              h("div",null,h("label",{style:sl},"Product code (optional)"),h("input",{value:pcode,onChange:function(e){var v=e.target.value;setPcode(v);if(v&&v.trim()&&!incCode)setIncCode(true);},placeholder:"e.g. GC-1042",style:si})),
               h("div",{style:aiPlace?{opacity:0.4}:null},h("label",{style:sl},"Code position"),h("select",{value:pcodePos||cfg.codePos||"top-right",disabled:aiPlace,onChange:function(e){setPcodePos(e.target.value);},style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
             ),
             h("div",{style:{marginTop:10}},
@@ -798,7 +882,18 @@ function App(){
             h("div",null,h("label",{style:sl},"Tagline size (% of height)"),h("input",{id:"s_tagp",type:"number",min:"1",max:"10",defaultValue:sett.taglinePct||"3",style:si})),
             h("div",null,h("label",{style:sl},"Default code position"),h("select",{id:"s_codepos",defaultValue:sett.codePos||"top-right",style:si},CODEPOS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);}))),
             h("div",null,h("label",{style:sl},"Code size (% of height)"),h("input",{id:"s_codep",type:"number",min:"1",max:"10",defaultValue:sett.codePct||"3",style:si})),
+            h("div",null,h("label",{style:sl},"Watermark size (% of width)"),h("input",{id:"s_wmp",type:"number",min:"10",max:"100",defaultValue:sett.watermarkPct||"60",style:si})),
+            h("div",null,h("label",{style:sl},"Watermark opacity (%)"),h("input",{id:"s_wmo",type:"number",min:"1",max:"100",defaultValue:sett.watermarkOpacity||"12",style:si})),
             h("div",null,h("label",{style:sl},"Auto-delete images after (days, 0 = never)"),h("input",{id:"s_ret",type:"number",min:"0",max:"3650",defaultValue:sett.retentionDays||"30",style:si}))
+          ),
+          h("div",{style:{marginTop:10}},
+            h("label",{style:sl},"Default branding elements (pre-ticked on the Create page — users can still change per image)"),
+            h("div",{style:{display:"flex",flexWrap:"wrap",gap:14,marginTop:6}},
+              [["s_inclogo","Logo",sett.incLogo],["s_incname","Brand name",sett.incName],["s_inctag","Tagline",sett.incTagline],["s_incwm","Watermark",sett.incWatermark],["s_inccode","Product code",sett.incCode]].map(function(it){
+                return h("label",{key:it[0],style:{display:"flex",alignItems:"center",gap:5,fontSize:12,color:t.tx,cursor:"pointer"}},
+                  h("input",{id:it[0],type:"checkbox",defaultChecked:it[2]==="1"||it[2]===1||it[2]===true}),it[1]);
+              })
+            )
           ),
           h("div",{style:{fontSize:10,color:t.t2,marginTop:8,lineHeight:1.5}},"Model name is free text so it can be updated if OpenAI renames it. Verify current options at platform.openai.com/docs."),
           h("button",{onClick:saveSettings,style:Object.assign({},sb(true),{marginTop:10})},"Save Settings"),
@@ -816,6 +911,15 @@ function App(){
             h("button",{onClick:uploadLogo,style:sb(false)},"Upload Logo")
           ),
           h("div",{style:{fontSize:10,color:t.t2,marginTop:8}},"Square PNG with transparent background works best. Drawn onto generated images at the chosen position.")
+        ),
+        h("div",{style:sc2},
+          h("div",{style:{fontSize:12,fontWeight:"bold",color:t.g,marginBottom:8}},"Watermark Image"),
+          h("div",{style:{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}},
+            h("img",{src:cfg.watermarkBase64||"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='52' height='52'><rect x='4' y='4' width='44' height='44' rx='6' fill='none' stroke='%23ccc'/></svg>",style:{width:52,height:52,borderRadius:8,border:"2px solid "+t.bd,objectFit:"contain",background:"#fff"}}),
+            h("input",{ref:wmR,type:"file",accept:"image/*",style:{fontSize:12,color:t.tx}}),
+            h("button",{onClick:uploadWatermark,style:sb(false)},"Upload Watermark")
+          ),
+          h("div",{style:{fontSize:10,color:t.t2,marginTop:8}},"Transparent PNG works best. When “Watermark” is ticked on Create, this image is drawn single, centered and faint over the photo — size & opacity set above.")
         )
       ):null,
 

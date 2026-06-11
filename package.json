@@ -1,14 +1,19 @@
 {
   "name": "jewelry-agent-cloudflare",
-  "version": "8.8.0",
+  "version": "8.9.0",
   "private": true,
   "scripts": {
     "dev": "npx wrangler pages dev public --d1=DB --r2=STORAGE",
-    "deploy": "npx wrangler pages deploy public --project-name=jewelry-agent"
+    "deploy": "npx wrangler pages deploy public --project-name=jewelry-agent",
+    "db:schema": "wrangler d1 execute DB --remote --file=schema.sql",
+    "db:migrate": "wrangler d1 execute DB --remote --file=migrate_v88_to_v89.sql"
   },
   "dependencies": {
     "jsdom": "^29.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "wrangler": "^3.114.1"
   }
 }

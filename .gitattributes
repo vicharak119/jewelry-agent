@@ -1,0 +1,6 @@
+# Keep `git archive` (version zips) lean: exclude bulky docs and the Versions
+# folder itself. These stay tracked in the repo; they're just omitted from archives.
+Doc/ export-ignore
+Versions/ export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore

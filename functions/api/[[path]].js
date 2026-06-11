@@ -67,7 +67,7 @@ function genTempPw() {
 }
 
 function mapLog(l) {
-  return { id: l.id, timestamp: l.timestamp, timestampIST: istFmt(l.timestamp), username: l.username, inputFile: l.input_file, outputFile: l.output_file, finalFile: l.final_file, jewelryType: l.jewelry_type, sceneJson: l.scene_json, photoStyle: l.photo_style, model: l.model, quality: l.quality, status: l.status, costEstimate: l.cost_estimate, errorMsg: l.error_msg, prompt: l.prompt || "", displayOn: l.display_on || "", refFile: l.ref_file || "" };
+  return { id: l.id, timestamp: l.timestamp, timestampIST: istFmt(l.timestamp), username: l.username, inputFile: l.input_file, outputFile: l.output_file, finalFile: l.final_file, jewelryType: l.jewelry_type, sceneJson: l.scene_json, photoStyle: l.photo_style, model: l.model, quality: l.quality, status: l.status, costEstimate: l.cost_estimate, errorMsg: l.error_msg, prompt: l.prompt || "", displayOn: l.display_on || "", refFile: l.ref_file || "", imageSize: l.image_size || "", brandingJson: l.branding_json || "" };
 }
 function mapUser(u) {
   return { id: u.id, username: u.username, email: u.email || "", role: u.role, mustChangePassword: !!u.must_change_password, createdAt: u.created_at, createdAtIST: istFmt(u.created_at), createdBy: u.created_by };
@@ -121,7 +121,7 @@ async function runCleanup(DB, R2) {
       var del = [];
       for (var i = 0; i < listed.objects.length; i++) {
         var k = listed.objects[i].key;
-        if (k === "logo.png") continue;
+        if (k === "logo.png" || k === "watermark.png") continue;
         if (!(k.indexOf("uploads/") === 0 || k.indexOf("outputs/") === 0)) continue;
         var fn = k.split("/").pop(), ts = parseInt(fn.split("_")[0], 10);
         if (ts && ts < cutoff) del.push(k);
@@ -294,6 +294,8 @@ export async function onRequest(ctx) {
       }
       var logoObj = R2.head ? await R2.head("logo.png").catch(function () { return null; }) : null;
       s.hasLogo = !!logoObj;
+      var wmObj = R2.head ? await R2.head("watermark.png").catch(function () { return null; }) : null;
+      s.hasWatermark = !!wmObj;
       return json(s);
     }
 
@@ -315,6 +317,16 @@ export async function onRequest(ctx) {
       return json({ message: "Logo uploaded" });
     }
 
+    // Watermark image upload via base64 JSON. Stored as watermark.png (never auto-deleted, like logo.png).
+    if (method === "POST" && path === "watermark-asset") {
+      var wb = await req.json(); if (!wb.imageData) return err("No image data");
+      var wct = (wb.imageData.match(/^data:(image\/[\w.+-]+);base64,/) || [])[1] || "image/png";
+      var wraw = wb.imageData.replace(/^data:[^,]+,/, "");
+      await R2.put("watermark.png", Uint8Array.from(atob(wraw), function (c) { return c.charCodeAt(0); }), { httpMetadata: { contentType: wct } });
+      await audit(DB, req, user.username, "settings.watermark_image", "watermark.png", wct);
+      return json({ message: "Watermark uploaded" });
+    }
+
     if (method === "POST" && path === "cleanup") {
       var n = await runCleanup(DB, R2);
       await audit(DB, req, user.username, "data.cleanup", "", n + " images deleted");
@@ -322,7 +334,7 @@ export async function onRequest(ctx) {
     }
 
     if (method === "GET" && path === "settings/public") {
-      var keys = ["brandName", "tagline", "logoPos", "model", "quality", "size", "style", "logoPct", "namePct", "taglinePct", "codePos", "codePct"], ps = {};
+      var keys = ["brandName", "tagline", "logoPos", "model", "quality", "size", "style", "logoPct", "namePct", "taglinePct", "codePos", "codePct", "watermarkPct", "watermarkOpacity", "incLogo", "incName", "incTagline", "incWatermark", "incCode"], ps = {};
       for (var pk of keys) ps[pk] = await getS(DB, pk);
       ps.hasApiKey = !!(await getS(DB, "openaiKey"));
       var logo = await R2.get("logo.png");
@@ -330,6 +342,12 @@ export async function onRequest(ctx) {
         var lbuf2 = await logo.arrayBuffer();
         var lct2 = (logo.httpMetadata && logo.httpMetadata.contentType) || "image/png";
         ps.logoBase64 = "data:" + lct2 + ";base64," + b64FromBuf(lbuf2);
+      }
+      var wm = await R2.get("watermark.png");
+      if (wm) {
+        var wbuf2 = await wm.arrayBuffer();
+        var wct2 = (wm.httpMetadata && wm.httpMetadata.contentType) || "image/png";
+        ps.watermarkBase64 = "data:" + wct2 + ";base64," + b64FromBuf(wbuf2);
       }
       return json(ps);
     }
@@ -426,13 +444,13 @@ export async function onRequest(ctx) {
       var gr = await fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { "Authorization": "Bearer " + gKey }, body: form });
       if (!gr.ok) {
         var ge = await gr.json().catch(function () { return {}; }); var gmsg = (ge.error && ge.error.message) || "Error";
-        await DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,jewelry_type,scene_json,photo_style,model,quality,status,error_msg)VALUES(?,?,?,?,?,?,?,?,?,'error',?)").bind(crypto.randomUUID(), new Date().toISOString(), user.username, gb.inputFile || "", (gb.analysis && gb.analysis.type) || "", JSON.stringify(gb.scene || {}), gb.style || "", mdl, qual, gmsg).run().catch(function () {});
+        await DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,jewelry_type,scene_json,photo_style,model,quality,status,error_msg,image_size,branding_json)VALUES(?,?,?,?,?,?,?,?,?,'error',?,?,?)").bind(crypto.randomUUID(), new Date().toISOString(), user.username, gb.inputFile || "", (gb.analysis && gb.analysis.type) || "", JSON.stringify(gb.scene || {}), gb.style || "", mdl, qual, gmsg, size, JSON.stringify(gb.branding || {})).run().catch(function () {});
         throw new Error(gmsg);
       }
       var gd = await gr.json(); var imgB64 = gd.data && gd.data[0] && gd.data[0].b64_json; var outKey = null;
       if (imgB64) { outKey = "outputs/" + user.username + "/" + Date.now() + "_gen.png"; await R2.put(outKey, Uint8Array.from(atob(imgB64), function (c) { return c.charCodeAt(0); }), { httpMetadata: { contentType: "image/png" } }); }
       var cost = qual === "high" ? "~Rs15-18" : qual === "low" ? "~Rs0.5" : "~Rs4-5";
-      await DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,output_file,jewelry_type,scene_json,photo_style,model,quality,status,cost_estimate,prompt,display_on,ref_file)VALUES(?,?,?,?,?,?,?,?,?,?,'success',?,?,?,?)").bind(crypto.randomUUID(), new Date().toISOString(), user.username, gb.inputFile || "", outKey || "", (gb.analysis && gb.analysis.type) || "", JSON.stringify(gb.scene || {}), gb.style || "", mdl, qual, cost, gb.prompt || "", gb.display || "", refKey || "").run();
+      await DB.prepare("INSERT INTO activity(id,timestamp,username,input_file,output_file,jewelry_type,scene_json,photo_style,model,quality,status,cost_estimate,prompt,display_on,ref_file,image_size,branding_json)VALUES(?,?,?,?,?,?,?,?,?,?,'success',?,?,?,?,?,?)").bind(crypto.randomUUID(), new Date().toISOString(), user.username, gb.inputFile || "", outKey || "", (gb.analysis && gb.analysis.type) || "", JSON.stringify(gb.scene || {}), gb.style || "", mdl, qual, cost, gb.prompt || "", gb.display || "", refKey || "", size, JSON.stringify(gb.branding || {})).run();
       return json({ b64_json: imgB64, url: gd.data && gd.data[0] && gd.data[0].url, outputFile: outKey });
     }
 
@@ -470,7 +488,7 @@ export async function onRequest(ctx) {
       var CAP = 500, keys = [], cursor;
       do {
         var listed = await R2.list({ limit: 1000, cursor: cursor });
-        for (var oi = 0; oi < listed.objects.length; oi++) { var ky = listed.objects[oi].key; if (ky === "logo.png") continue; keys.push(ky); }
+        for (var oi = 0; oi < listed.objects.length; oi++) { var ky = listed.objects[oi].key; if (ky === "logo.png" || ky === "watermark.png") continue; keys.push(ky); }
         cursor = listed.truncated ? listed.cursor : null;
       } while (cursor && keys.length < CAP);
       keys = keys.slice(0, CAP);

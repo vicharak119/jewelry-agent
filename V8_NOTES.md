@@ -275,3 +275,33 @@ Deferred to v8.8: "let AI decide" auto-placement (client-side heuristic). Parked
 Honest limits: the auto-placement is a heuristic (variance-based), not true scene understanding, so it
 can occasionally pick an imperfect spot \u2014 users can switch back to manual anytime. Canvas output and
 model fidelity can't be verified here.
+
+## v8.9 \u2014 Per-element branding toggles, watermark, full per-generation logging
+
+- **Independent branding checkboxes (Create page).** Logo, Brand name, Tagline, Watermark and Product
+  code are now each their own on/off checkbox \u2014 **all off by default**. Previously logo+name+tagline
+  were one unit and "No Branding" was a logo-position option (removed). `drawText()` was refactored to
+  render any subset (logo alone, text alone, logo+name without tagline, etc.). Admins can set the
+  default tick-state for each element in Settings; typing a product code auto-ticks its box.
+- **Watermark (new).** A separate watermark image is uploaded in Settings (stored in R2 as
+  `watermark.png`, never auto-deleted, like the logo). When the Watermark box is ticked it's drawn
+  **single, centered, large & faint** over the photo (under the logo/text/code). Size (% of width) and
+  opacity (%) are Settings. New route `POST /api/watermark-asset`; `settings/public` returns
+  `watermarkBase64` + the size/opacity + the default toggles.
+- **Full per-generation logging (History).** `/api/generate` now records the **image size** and a
+  **branding snapshot** (`branding_json`: which elements, positions, sizes, code value, aiPlace) on the
+  activity row. History gained columns: Size, Logo, Name, Tagline, W.mark, Code, and a Scene "Copy"
+  button \u2014 so every field used to build an image is captured and filterable. Old rows (no snapshot)
+  show blanks/"off" gracefully.
+- **Consolidated schema (item 5).** `schema.sql` is now the single source of truth: the full FRESH
+  schema **plus** every historical migration, bifurcated by version. The separate `migrate_v6_to_v7`,
+  `migrate_v8_to_v8b`, `migrate_v83_to_v84`, `migrate_v86_to_v87` files were merged in and removed.
+  Future schema changes are appended as a new version section here.
+- **wrangler** added as a dev dependency with `db:schema` / `db:migrate` npm scripts, for applying the
+  schema to live D1 (needs `wrangler login` + your D1 database name).
+
+**Migration:** run `migrate_v88_to_v89.sql` once per instance (adds `image_size` + `branding_json` to
+`activity`, and the watermark/default-toggle settings keys). SW cache `jw-v89`; version 8.9.0.
+
+Honest limits: canvas output (watermark look, independent-element layout) and model fidelity still
+can't be verified here \u2014 check a real generation after deploy and tune the watermark size/opacity.
