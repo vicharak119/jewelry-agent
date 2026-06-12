@@ -314,6 +314,18 @@ No migration.
 Optional next step (not done): make `/api/analyze` theme-aware (pass the chosen Style to GPT-4o) so its
 suggested props/mood match the theme from the start.
 
+## v8.9.3 — Theme-aware, colour-coordinated analysis (the right fix)
+
+Replaces v8.9.2's blind theme override. Rather than the client forcing the theme's hardcoded props
+(which ignore the product's actual colours), the **analysis** is now theme-aware: the Create page sends
+the selected style (`style` / `themeName` / `themeDesc`) into `/api/analyze`, and the GPT-4o brief now
+requires the `background`/`props`/`color_mood` to **match the chosen style AND complement the product's
+real metal/gemstone colours** (warm staging for gold, cooler for silver, accent props echoing the gem
+colour), and forbids `none`/`plain`/empty (except for the minimal style, which stays clean). Because
+GPT-4o can *see* the piece, props are now colour-coordinated to the product instead of a generic
+template. `doAnalyze` reverts to using the AI's (now reliable) background, falling back to the theme
+only if it still returns blank. SW cache `jw-v893`; version 8.9.3. No migration.
+
 ## v8.9 \u2014 Per-element branding toggles, watermark, full per-generation logging
 
 - **Independent branding checkboxes (Create page).** Logo, Brand name, Tagline, Watermark and Product

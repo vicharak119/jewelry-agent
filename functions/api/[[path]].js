@@ -369,6 +369,15 @@ export async function onRequest(ctx) {
     if (method === "POST" && path === "analyze") {
       var apiKey = await getS(DB, "openaiKey"); if (!apiKey) return err("No API key. Ask admin.");
       var fd = await req.formData(), file = fd.get("image"); if (!file || typeof file === "string") return err("No image");
+      var themeName = (fd.get("themeName") || fd.get("style") || "").toString().trim();
+      var themeDesc = (fd.get("themeDesc") || "").toString().trim();
+      var isMinimal = /minimal/i.test(themeName) || /minimal/i.test((fd.get("style") || "").toString());
+      var themeLine = themeName
+        ? ("The user has chosen the \"" + themeName + "\" style" + (themeDesc ? (" — " + themeDesc) : "") + ". Your recommended background, props and colour mood MUST match this style AND visibly complement the product's own metal and gemstone colours.")
+        : "Your recommended background, props and colour mood must form a cohesive marketing scene that complements the product's own metal and gemstone colours.";
+      var propsRule = isMinimal
+        ? "This is a minimal/clean style, so keep props very subtle or none, but the surface and colour mood must still complement the product."
+        : "Provide EXACTLY 3 to 5 specific decorative props that suit the style AND the product's colours — mandatory, never \"none\" or empty.";
       var buf = await file.arrayBuffer();
       var imgB = b64FromBuf(buf);
       var safeName = (file.name || "input.jpg").split(/[\\/]/).pop().replace(/[^\w.\-]/g, "_");
@@ -377,8 +386,8 @@ export async function onRequest(ctx) {
       var ar = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
         body: JSON.stringify({ model: "gpt-4o", max_tokens: 1000, messages: [
-          { role: "system", content: 'You are a luxury jewelry photography director. Analyze the jewelry with EXTREME precision - every charm, stone, bead, chain link pattern matters. IMPORTANT: a photo may contain MORE THAN ONE piece (for example a necklace AND matching earrings AND a ring). Identify EVERY distinct piece you can see, including small ones like earrings. Return ONLY valid JSON: {"items":["short name of each distinct piece, e.g. \'gold floral necklace\', \'matching drop earrings\'"],"type":"the primary/most prominent piece type","metal":"metal/finish","elements":"VERY detailed description across ALL pieces - count of charms, exact shapes, colors, placement, spacing","style":"design style","chain_type":"chain type","display":"recommended mannequin/display","background":"background","props":"3-4 props comma separated","color_mood":"palette"}' },
-          { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64," + imgB, detail: "high" } }, { type: "text", text: "Analyze this jewelry with extreme detail. List EVERY distinct piece in 'items' \u2014 do not miss earrings or any small item. Every element matters for accurate reproduction. JSON only." }] },
+          { role: "system", content: 'You are a luxury jewelry photography director. Analyze the jewelry with EXTREME precision - every charm, stone, bead, chain link pattern matters. IMPORTANT: a photo may contain MORE THAN ONE piece (for example a necklace AND matching earrings AND a ring). Identify EVERY distinct piece you can see, including small ones like earrings. You ALSO design the marketing scene: the background, props and colour mood you return are part of the creative brief and must COMPLEMENT the product\'s real metal and gemstone colours (warm staging for gold, cooler for silver/white-gold, accent props echoing the gem colour). Unless the chosen style is explicitly minimal, do NOT return "none", "plain" or empty for background or props. Return ONLY valid JSON: {"items":["short name of each distinct piece, e.g. \'gold floral necklace\', \'matching drop earrings\'"],"type":"the primary/most prominent piece type","metal":"metal/finish","elements":"VERY detailed description across ALL pieces - count of charms, exact shapes, colors, placement, spacing","style":"design style","chain_type":"chain type","display":"recommended mannequin/display","background":"a styled marketing background/surface matching the chosen style and complementing the product colours","props":"specific decorative props (comma separated) that suit the style AND the product colours","color_mood":"palette tying the product colours to the scene"}' },
+          { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64," + imgB, detail: "high" } }, { type: "text", text: "Analyze this jewelry with extreme detail. List EVERY distinct piece in 'items' \u2014 do not miss earrings or any small item. " + themeLine + " " + propsRule + " The background, props and colour mood must complement the product's ACTUAL colours. JSON only." }] },
         ] }),
       });
       if (!ar.ok) { var ae = await ar.json().catch(function () { return {}; }); throw new Error((ae.error && ae.error.message) || "OpenAI error"); }

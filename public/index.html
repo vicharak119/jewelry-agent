@@ -332,14 +332,16 @@ function App(){
     if(!imgF){setErr("Upload image first");return;}
     setErr("");setPh("analyzing");setSts("Analyzing jewelry...");
     var fd=new FormData();fd.append("image",imgF);
+    // Tell the analysis which theme the user picked + its look, so GPT-4o returns props/background
+    // that match the theme AND complement the product's actual metal/gem colours.
+    var styObj=STYS.filter(function(s){return s.id===sty;})[0];
+    fd.append("style",sty);fd.append("themeName",(styObj&&styObj.n)||sty);fd.append("themeDesc",sf(sty));
     api("/api/analyze",{method:"POST",body:fd}).then(function(d){
       var a=d.analysis;setAn(Object.assign({},a,{inputFile:d.inputFile}));
       var its=(a.items&&a.items.length)?a.items.slice():(a.type?[a.type]:[]);setItems(its);
-      // The SELECTED THEME drives the scene background. The AI often just describes the (often plain)
-      // input photo — e.g. "plain white" — which used to override the theme and produce a bare shot.
-      // Piece-specific props/mood from the AI are kept when given; "none"/blank falls back to the theme.
+      // Use the AI's theme- & colour-aware scene; fall back to the theme/empty only if it returns "none"/blank.
       var nz=function(s){s=(s||"").trim();return (!s||s.toLowerCase()==="none")?"":s;};
-      setSc({d:a.display||"white mannequin",b:sf(sty),p:nz(a.props),m:nz(a.color_mood)});
+      setSc({d:a.display||"white mannequin",b:nz(a.background)||sf(sty),p:nz(a.props),m:nz(a.color_mood)});
       setPh("scene");setSts("Review the scene, then generate.");
     }).catch(function(e){setErr(e.message);setPh("idle");});
   }
