@@ -48,6 +48,13 @@ function sf(id){return{
   lifestyle:"Cream linen surface. Soft window light. Eucalyptus leaves, crystal perfume bottle. Warm neutrals.",
   ethnic:"Burgundy and gold silk fabric. Brass diya, ivory rose petals, brass box. Warm golden light."
 }[id]||"";}
+// Fallback props per theme — used when the AI analysis returns no props (or "none").
+function themeProps(id){return{
+  luxury:"white chrysanthemums in a gold-trimmed ceramic dish, a vintage brass key, ivory silk drapes",
+  minimal:"none — keep it clean and bare",
+  lifestyle:"eucalyptus leaves, a crystal perfume bottle, soft linen folds",
+  ethnic:"a lit brass diya, ivory rose petals, a small brass box, draped silk"
+}[id]||"tasteful styling props that suit the style";}
 
 const DISPLAYS=[{id:"mannequin",n:"On mannequin / bust"},{id:"body",n:"On model (body part)"},{id:"props",n:"On themed props"}];
 const CODEPOS=[{id:"top-right",n:"Top Right"},{id:"top-center",n:"Top Center"},{id:"top-left",n:"Top Left"},{id:"bottom-right",n:"Bottom Right"},{id:"bottom-center",n:"Bottom Center"},{id:"bottom-left",n:"Bottom Left"}];
@@ -328,7 +335,9 @@ function App(){
     api("/api/analyze",{method:"POST",body:fd}).then(function(d){
       var a=d.analysis;setAn(Object.assign({},a,{inputFile:d.inputFile}));
       var its=(a.items&&a.items.length)?a.items.slice():(a.type?[a.type]:[]);setItems(its);
-      setSc({d:a.display||"white mannequin",b:a.background||sf(sty),p:a.props||"",m:a.color_mood||""});
+      // Treat an AI "none"/blank as empty so the scene falls back to the selected theme (not a bare "Props: none").
+      var nz=function(s){s=(s||"").trim();return (!s||s.toLowerCase()==="none")?"":s;};
+      setSc({d:a.display||"white mannequin",b:nz(a.background)||sf(sty),p:nz(a.props),m:nz(a.color_mood)});
       setPh("scene");setSts("Review the scene, then generate.");
     }).catch(function(e){setErr(e.message);setPh("idle");});
   }
@@ -339,15 +348,17 @@ function App(){
     var dd=dispParam||disps[0]||"mannequin";
     var place=dd==="body"?("Show the piece being worn on "+bodyPartFor(an.type)+" of an elegant model \u2014 tasteful and natural, only the relevant body area in frame.")
       :dd==="props"?"Arrange the piece elegantly on themed props that suit the style. No mannequin or body in frame."
-      :("Display the piece on a clean, neutral jewelry "+((sc.d&&sc.d.trim())||"bust / stand")+" appropriate to the item.");
+      :("Present the piece on an elegant jewelry "+((sc.d&&sc.d.trim())||"bust / stand")+", styled within the themed scene described below.");
+    var mz=function(s){s=(s||"").trim();return (s&&s.toLowerCase()!=="none")?s:"";};
+    var sBg=mz(sc.b)||sf(sty),sProps=mz(sc.p)||themeProps(sty),sMood=mz(sc.m)||"warm, premium";
     var scenePart=refImg
       ?"BACKGROUND \u2014 USE THE REFERENCE: a second reference image is provided. Reproduce its background, setting, surface, colours, props and lighting mood EXACTLY as shown, and place the product naturally into that same scene. Do NOT invent a different background.\n"
-      :"SCENE: "+((sc.b&&sc.b.trim())||sf(sty))+". Props: "+((sc.p&&sc.p.trim())||"minimal, tasteful")+". Colour mood: "+((sc.m&&sc.m.trim())||"warm, premium")+".\n";
+      :"SCENE \u2014 BUILD a rich, styled marketing setting AROUND the piece (replace any plain or original backdrop; do NOT leave a bare background): "+sBg+". Props to include: "+sProps+". Colour mood: "+sMood+".\n";
     var cleanItems=(items||[]).map(function(x){return (x||"").trim();}).filter(Boolean);
     var itemsPart=cleanItems.length?("PIECES IN THIS PHOTO \u2014 the photo contains "+cleanItems.length+" jewelry piece"+(cleanItems.length>1?"s":"")+": "+cleanItems.map(function(x,i){return (i+1)+") "+x;}).join("; ")+". EVERY one of these pieces MUST appear in the final image, each preserved exactly. Do NOT omit any piece (especially small items like earrings). If a piece is a PAIR (such as earrings), show BOTH and keep them identical \u2014 never a single one, never a different design.\n\n"):"";
     return "Using the provided product photograph as the EXACT subject, create a professional, ultra-realistic luxury jewelry marketing photo.\n\n"
       +itemsPart
-      +"CRITICAL \u2014 PRESERVE THE PRODUCT EXACTLY: the jewelry shown in the photo must stay identical \u2014 same design, stones, charms, beads, chain/link pattern, metal, colour and proportions. Do NOT redesign, restyle, add, remove, recolour, or rearrange any element. NEVER substitute, swap or invent a piece \u2014 every piece in the result must be the SAME design as the matching piece in the photo (e.g. do not replace clover/flower earrings with plain studs). You may ONLY improve clarity, sharpness, focus and lighting on the piece(s) itself.\n\n"
+      +"CRITICAL \u2014 PRESERVE THE JEWELRY EXACTLY: the jewelry piece(s) shown in the photo must stay identical \u2014 same design, stones, charms, beads, chain/link pattern, metal, colour and proportions. Do NOT redesign, restyle, add, remove, recolour, or rearrange any part OF THE JEWELRY. NEVER substitute, swap or invent a piece \u2014 every piece in the result must be the SAME design as the matching piece in the photo (e.g. do not replace clover/flower earrings with plain studs). Keep the jewelry itself unchanged (only improve its clarity, sharpness, focus and lighting) \u2014 but DO build a fresh, styled background, surface, props and lighting around it as described below.\n\n"
       +"PLACEMENT: "+place+"\n"
       +scenePart
       +"CAMERA & LIGHT: flattering angle, soft diffused studio lighting, shallow depth of field, the jewelry tack-sharp.\n"

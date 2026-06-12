@@ -276,6 +276,26 @@ Honest limits: the auto-placement is a heuristic (variance-based), not true scen
 can occasionally pick an imperfect spot \u2014 users can switch back to manual anytime. Canvas output and
 model fidelity can't be verified here.
 
+## v8.9.1 \u2014 Theme reliably drives props/scene (fixes "Props: none" \u2192 bare shots)
+
+Not a v8.9 regression \u2014 the props pipeline (`a.props` \u2192 `sc.p` \u2192 prompt) is unchanged from v8.8. But
+when GPT-4o's analysis returns `props:"none"` (common for plain catalog photos), the old prompt sent
+`Props: none` and, combined with the "clean, neutral bust" placement line and the edit model's
+tendency to keep backgrounds, produced a bare image. Fixes:
+
+- **`themeProps(id)` fallback** \u2014 when props are empty/"none", the **selected theme's** props are used
+  (luxury \u2192 chrysanthemums/brass key/silk, etc.; minimal stays bare by design).
+- **`doAnalyze` normalises** an AI `none`/blank to empty so it falls back to the theme instead of
+  literally printing "Props: none".
+- **Prompt reworded to BUILD the scene**: placement no longer asks for a "clean, neutral" backdrop;
+  the SCENE line is now imperative ("BUILD a rich, styled setting AROUND the piece; do NOT leave a
+  bare background"); and the preserve-exactly paragraph is scoped to **the jewelry only**, explicitly
+  allowing (encouraging) a fresh styled background/props.
+
+Branding being off is separate and intended (v8.9 default) \u2014 tick the elements on Create or set
+defaults in Settings to bring logo/name/tagline/code back. SW cache `jw-v891`; version 8.9.1. No
+migration.
+
 ## v8.9 \u2014 Per-element branding toggles, watermark, full per-generation logging
 
 - **Independent branding checkboxes (Create page).** Logo, Brand name, Tagline, Watermark and Product

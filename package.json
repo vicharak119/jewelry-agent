@@ -1,6 +1,6 @@
 {
   "name": "jewelry-agent-cloudflare",
-  "version": "8.9.0",
+  "version": "8.9.1",
   "private": true,
   "scripts": {
     "dev": "npx wrangler pages dev public --d1=DB --r2=STORAGE",
