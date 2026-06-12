@@ -335,9 +335,11 @@ function App(){
     api("/api/analyze",{method:"POST",body:fd}).then(function(d){
       var a=d.analysis;setAn(Object.assign({},a,{inputFile:d.inputFile}));
       var its=(a.items&&a.items.length)?a.items.slice():(a.type?[a.type]:[]);setItems(its);
-      // Treat an AI "none"/blank as empty so the scene falls back to the selected theme (not a bare "Props: none").
+      // The SELECTED THEME drives the scene background. The AI often just describes the (often plain)
+      // input photo — e.g. "plain white" — which used to override the theme and produce a bare shot.
+      // Piece-specific props/mood from the AI are kept when given; "none"/blank falls back to the theme.
       var nz=function(s){s=(s||"").trim();return (!s||s.toLowerCase()==="none")?"":s;};
-      setSc({d:a.display||"white mannequin",b:nz(a.background)||sf(sty),p:nz(a.props),m:nz(a.color_mood)});
+      setSc({d:a.display||"white mannequin",b:sf(sty),p:nz(a.props),m:nz(a.color_mood)});
       setPh("scene");setSts("Review the scene, then generate.");
     }).catch(function(e){setErr(e.message);setPh("idle");});
   }

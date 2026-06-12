@@ -296,6 +296,24 @@ Branding being off is separate and intended (v8.9 default) \u2014 tick the eleme
 defaults in Settings to bring logo/name/tagline/code back. SW cache `jw-v891`; version 8.9.1. No
 migration.
 
+## v8.9.2 \u2014 Selected theme is now authoritative for the scene (root cause)
+
+Diagnosed from the live D1 `activity` rows. The scene background was built as
+`a.background || sf(theme)`: when GPT-4o returned an **empty** background the selected theme filled in
+(rich props), but when it returned a **non-empty but plain** value like `"plain white"` (clean catalog
+photos), that string **silently overrode the theme** \u2192 bare image. Stored `scene_json` confirmed it \u2014
+good shots had the theme background; bare shots had `{"b":"plain white","p":"none"}`. v8.9.1's `none`
+handling didn't catch `"plain white"`.
+
+Fix: `doAnalyze` now sets the background to the **selected theme** (`sf(sty)`) outright, instead of
+letting the AI's description of the input override it. Piece-specific props/mood from the AI are still
+kept when present (else theme fallback). Picking Luxury/Ethnic/etc. now reliably produces that scene
+regardless of the input photo. The Background field stays editable. SW cache `jw-v892`; version 8.9.2.
+No migration.
+
+Optional next step (not done): make `/api/analyze` theme-aware (pass the chosen Style to GPT-4o) so its
+suggested props/mood match the theme from the start.
+
 ## v8.9 \u2014 Per-element branding toggles, watermark, full per-generation logging
 
 - **Independent branding checkboxes (Create page).** Logo, Brand name, Tagline, Watermark and Product
