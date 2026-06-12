@@ -326,6 +326,24 @@ GPT-4o can *see* the piece, props are now colour-coordinated to the product inst
 template. `doAnalyze` reverts to using the AI's (now reliable) background, falling back to the theme
 only if it still returns blank. SW cache `jw-v893`; version 8.9.3. No migration.
 
+## v8.9.4 — Props is an explicit toggle (default ON), independent of theme
+
+Root insight (from the live `photo_style` column): the bare shots were all generated with the
+**Minimal** theme (defined as "Pure white, clean shadows, no props"); the same piece on **Luxury**
+/ **Ethnic** the same day produced rich props. So nothing was broken — Minimal was doing its job.
+Per the user's call, props are now a **deliberate choice**, not a side effect of the theme:
+
+- New **"Add themed props & styling"** checkbox on Create, **default ON**. The theme still controls the
+  aesthetic (background/colour); this toggle controls props.
+- `doAnalyze` sends `wantProps`; `/api/analyze` honours it: ON → 3–5 props mandatory (matched to style
+  AND the product's colours, **regardless of theme — even Minimal**); OFF → returns empty props + a
+  clean background. The old minimal-special-casing is gone.
+- `buildPrompt` respects the toggle: ON → "BUILD a styled setting … Props to include: …"; OFF → "a
+  clean, uncluttered setting … NO decorative props". `themeProps("minimal")` now gives real subtle
+  props (only used when props are ON).
+
+SW cache `jw-v894`; version 8.9.4. No migration.
+
 ## v8.9 \u2014 Per-element branding toggles, watermark, full per-generation logging
 
 - **Independent branding checkboxes (Create page).** Logo, Brand name, Tagline, Watermark and Product

@@ -51,7 +51,7 @@ function sf(id){return{
 // Fallback props per theme — used when the AI analysis returns no props (or "none").
 function themeProps(id){return{
   luxury:"white chrysanthemums in a gold-trimmed ceramic dish, a vintage brass key, ivory silk drapes",
-  minimal:"none — keep it clean and bare",
+  minimal:"a few soft white flowers, a couple of loose pearls, gentle fabric folds",
   lifestyle:"eucalyptus leaves, a crystal perfume bottle, soft linen folds",
   ethnic:"a lit brass diya, ivory rose petals, a small brass box, draped silk"
 }[id]||"tasteful styling props that suit the style";}
@@ -228,6 +228,8 @@ function App(){
   var[pcode,setPcode]=useState("");var[pcodePos,setPcodePos]=useState("");var[genSrc,setGenSrc]=useState(null);
   // v8.9 per-element branding toggles (all default OFF; admin can change defaults in Settings)
   var[incLogo,setIncLogo]=useState(false);var[incName,setIncName]=useState(false);var[incTagline,setIncTagline]=useState(false);var[incWatermark,setIncWatermark]=useState(false);var[incCode,setIncCode]=useState(false);
+  // v8.9.4 props toggle (default ON): governs themed props independent of theme.
+  var[incProps,setIncProps]=useState(true);
   var togglesInit=useRef(false);
   var[jobId,setJobId]=useState(null);var[jobStatus,setJobStatus]=useState("");var[jobStart,setJobStart]=useState(0);var[prog,setProg]=useState(0);
   var[ovr,setOvr]=useState({});var[aiPlace,setAiPlace]=useState(false);
@@ -261,7 +263,7 @@ function App(){
   },[cfg]);
   useEffect(function(){if(!err)return;var id=setTimeout(function(){setErr("");},5000);return function(){clearTimeout(id);};},[err]);
   useEffect(function(){if(!msg)return;var id=setTimeout(function(){setMsg("");},5000);return function(){clearTimeout(id);};},[msg]);
-  useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt(disps[0]));},[ph,an,sc,disps,sty,ext,refImg,items,promptDirty]);
+  useEffect(function(){if(ph==="scene"&&an&&!promptDirty)setPromptText(buildPrompt(disps[0]));},[ph,an,sc,disps,sty,ext,refImg,items,promptDirty,incProps]);
   // Client-side progress estimate while a synchronous generation is in flight.
   useEffect(function(){
     if(ph!=="gen"||batch)return;
@@ -336,12 +338,14 @@ function App(){
     // that match the theme AND complement the product's actual metal/gem colours.
     var styObj=STYS.filter(function(s){return s.id===sty;})[0];
     fd.append("style",sty);fd.append("themeName",(styObj&&styObj.n)||sty);fd.append("themeDesc",sf(sty));
+    fd.append("wantProps",incProps?"1":"0");
     api("/api/analyze",{method:"POST",body:fd}).then(function(d){
       var a=d.analysis;setAn(Object.assign({},a,{inputFile:d.inputFile}));
       var its=(a.items&&a.items.length)?a.items.slice():(a.type?[a.type]:[]);setItems(its);
       // Use the AI's theme- & colour-aware scene; fall back to the theme/empty only if it returns "none"/blank.
+      // Props are governed by the Props toggle, independent of theme.
       var nz=function(s){s=(s||"").trim();return (!s||s.toLowerCase()==="none")?"":s;};
-      setSc({d:a.display||"white mannequin",b:nz(a.background)||sf(sty),p:nz(a.props),m:nz(a.color_mood)});
+      setSc({d:a.display||"white mannequin",b:nz(a.background)||sf(sty),p:incProps?nz(a.props):"",m:nz(a.color_mood)});
       setPh("scene");setSts("Review the scene, then generate.");
     }).catch(function(e){setErr(e.message);setPh("idle");});
   }
@@ -354,10 +358,13 @@ function App(){
       :dd==="props"?"Arrange the piece elegantly on themed props that suit the style. No mannequin or body in frame."
       :("Present the piece on an elegant jewelry "+((sc.d&&sc.d.trim())||"bust / stand")+", styled within the themed scene described below.");
     var mz=function(s){s=(s||"").trim();return (s&&s.toLowerCase()!=="none")?s:"";};
-    var sBg=mz(sc.b)||sf(sty),sProps=mz(sc.p)||themeProps(sty),sMood=mz(sc.m)||"warm, premium";
+    var sBg=mz(sc.b)||sf(sty),sMood=mz(sc.m)||"warm, premium";
+    var sProps=incProps?(mz(sc.p)||themeProps(sty)):"";
     var scenePart=refImg
       ?"BACKGROUND \u2014 USE THE REFERENCE: a second reference image is provided. Reproduce its background, setting, surface, colours, props and lighting mood EXACTLY as shown, and place the product naturally into that same scene. Do NOT invent a different background.\n"
-      :"SCENE \u2014 BUILD a rich, styled marketing setting AROUND the piece (replace any plain or original backdrop; do NOT leave a bare background): "+sBg+". Props to include: "+sProps+". Colour mood: "+sMood+".\n";
+      :(incProps
+        ?"SCENE \u2014 BUILD a rich, styled marketing setting AROUND the piece (replace any plain or original backdrop; do NOT leave a bare background): "+sBg+". Props to include: "+sProps+". Colour mood: "+sMood+".\n"
+        :"SCENE \u2014 a clean, elegant, uncluttered marketing setting AROUND the piece, with NO decorative props: "+sBg+". Colour mood: "+sMood+".\n");
     var cleanItems=(items||[]).map(function(x){return (x||"").trim();}).filter(Boolean);
     var itemsPart=cleanItems.length?("PIECES IN THIS PHOTO \u2014 the photo contains "+cleanItems.length+" jewelry piece"+(cleanItems.length>1?"s":"")+": "+cleanItems.map(function(x,i){return (i+1)+") "+x;}).join("; ")+". EVERY one of these pieces MUST appear in the final image, each preserved exactly. Do NOT omit any piece (especially small items like earrings). If a piece is a PAIR (such as earrings), show BOTH and keep them identical \u2014 never a single one, never a different design.\n\n"):"";
     return "Using the provided product photograph as the EXACT subject, create a professional, ultra-realistic luxury jewelry marketing photo.\n\n"
@@ -711,6 +718,11 @@ function App(){
                 h("div",{style:{fontSize:12,fontWeight:"bold",color:sty===s.id?t.g:t.tx}},s.n),
                 h("div",{style:{fontSize:10,color:t.t2}},s.d)
               );}))
+            ),
+            h("div",{style:{marginTop:10,padding:"9px 11px",borderRadius:8,border:"1px solid "+(incProps?t.g:t.bd),background:incProps?(dk?"rgba(200,169,81,0.12)":"rgba(176,140,42,0.08)"):"transparent"}},
+              h("button",{onClick:function(){setIncProps(function(v){return !v;});setPromptDirty(false);},style:{display:"flex",alignItems:"center",gap:8,width:"100%",background:"none",border:"none",cursor:"pointer",color:incProps?t.g:t.tx,fontSize:12.5,textAlign:"left",padding:0}},
+                h("span",{style:{fontSize:15}},incProps?"☑":"☐"),h("span",null,"Add themed props & styling")),
+              h("div",{style:{fontSize:9,color:t.t2,marginTop:4}},incProps?"On — the AI adds props matched to the theme AND the piece's colours (works on any theme, even Minimal).":"Off — a clean, propless setting (just the piece, no decorative props).")
             ),
             h("div",{style:{marginTop:10,padding:"10px 11px",borderRadius:8,border:"1px solid "+t.bd}},
               h("label",{style:sl},"Include in image (all off by default)"),
