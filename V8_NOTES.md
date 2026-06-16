@@ -344,6 +344,16 @@ Per the user's call, props are now a **deliberate choice**, not a side effect of
 
 SW cache `jw-v894`; version 8.9.4. No migration.
 
+## v8.9.5 — Restore scene variety (stop the AI parroting a fixed template)
+
+Diagnosed from live `scene_json`: every Luxury generation stored the exact hardcoded template
+(`"polished cream marble with gold veins"` / `"white chrysanthemums in gold-trimmed ceramic dish…"`).
+Cause was v8.9.3: it sent the theme's full description (`sf(sty)`) into `/api/analyze` with "match this
+style", so GPT-4o echoed that fixed text back as background/props → identical scenes across different
+products. Fix: send only a short **mood** per theme (`themeMood(id)`) and instruct the analysis to
+**INVENT a fresh, varied, product-specific** background/props/colour (never a stock/templated scene),
+still complementing the piece's real colours. SW cache `jw-v895`; version 8.9.5. No migration.
+
 ## v8.9 \u2014 Per-element branding toggles, watermark, full per-generation logging
 
 - **Independent branding checkboxes (Create page).** Logo, Brand name, Tagline, Watermark and Product

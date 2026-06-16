@@ -49,6 +49,14 @@ function sf(id){return{
   ethnic:"Burgundy and gold silk fabric. Brass diya, ivory rose petals, brass box. Warm golden light."
 }[id]||"";}
 // Fallback props per theme — used when the AI analysis returns no props (or "none").
+// Short MOOD per theme (sent to analysis instead of the full scene text, so GPT-4o invents a fresh
+// scene rather than parroting a fixed template — which killed variety across products).
+function themeMood(id){return{
+  luxury:"opulent and warm — champagne-gold, marble, silk and fresh flowers",
+  minimal:"clean, bright and minimal",
+  lifestyle:"soft natural daylight, linen and greenery, relaxed editorial",
+  ethnic:"rich traditional Indian festive — silk, brass, diya, warm tones"
+}[id]||"elegant and premium";}
 function themeProps(id){return{
   luxury:"white chrysanthemums in a gold-trimmed ceramic dish, a vintage brass key, ivory silk drapes",
   minimal:"a few soft white flowers, a couple of loose pearls, gentle fabric folds",
@@ -337,7 +345,7 @@ function App(){
     // Tell the analysis which theme the user picked + its look, so GPT-4o returns props/background
     // that match the theme AND complement the product's actual metal/gem colours.
     var styObj=STYS.filter(function(s){return s.id===sty;})[0];
-    fd.append("style",sty);fd.append("themeName",(styObj&&styObj.n)||sty);fd.append("themeDesc",sf(sty));
+    fd.append("style",sty);fd.append("themeName",(styObj&&styObj.n)||sty);fd.append("themeMood",themeMood(sty));
     fd.append("wantProps",incProps?"1":"0");
     api("/api/analyze",{method:"POST",body:fd}).then(function(d){
       var a=d.analysis;setAn(Object.assign({},a,{inputFile:d.inputFile}));

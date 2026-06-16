@@ -370,13 +370,13 @@ export async function onRequest(ctx) {
       var apiKey = await getS(DB, "openaiKey"); if (!apiKey) return err("No API key. Ask admin.");
       var fd = await req.formData(), file = fd.get("image"); if (!file || typeof file === "string") return err("No image");
       var themeName = (fd.get("themeName") || fd.get("style") || "").toString().trim();
-      var themeDesc = (fd.get("themeDesc") || "").toString().trim();
+      var themeMood = (fd.get("themeMood") || "").toString().trim();
       var wantProps = (fd.get("wantProps") || "1").toString() !== "0"; // user's Props toggle (default ON), independent of theme
       var themeLine = themeName
-        ? ("The user has chosen the \"" + themeName + "\" style" + (themeDesc ? (" — " + themeDesc) : "") + ". Your recommended background and colour mood MUST match this style AND visibly complement the product's own metal and gemstone colours.")
-        : "Your recommended background and colour mood must form a cohesive marketing scene that complements the product's own metal and gemstone colours.";
+        ? ("The user chose the \"" + themeName + "\" style" + (themeMood ? (" (mood: " + themeMood + ")") : "") + ". INVENT a fresh, specific, original background and colour mood that fit this mood AND visibly complement the product's own metal and gemstone colours. Be CREATIVE and vary your choices for THIS particular piece — do NOT output a generic, stock or templated scene, and do not just repeat a standard description.")
+        : "Invent a fresh, original background and colour mood that complement the product's own metal and gemstone colours; be creative and specific to this piece.";
       var propsRule = wantProps
-        ? "INCLUDE PROPS (mandatory, regardless of the chosen style): provide EXACTLY 3 to 5 specific decorative props (comma separated) that suit the style AND complement the product's colours — never \"none\" or empty."
+        ? "INCLUDE PROPS (mandatory, regardless of the chosen style): INVENT exactly 3 to 5 specific, original props (comma separated) that suit the mood AND complement the product's colours — be creative and pick different props that fit THIS piece; never \"none\", empty, or a generic stock list."
         : "NO PROPS: the user wants a clean, propless setting — return \"props\" as an empty string and keep the background simple and uncluttered.";
       var buf = await file.arrayBuffer();
       var imgB = b64FromBuf(buf);
