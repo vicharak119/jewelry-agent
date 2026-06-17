@@ -314,6 +314,29 @@ No migration.
 Optional next step (not done): make `/api/analyze` theme-aware (pass the chosen Style to GPT-4o) so its
 suggested props/mood match the theme from the start.
 
+## v8.10 — distinct scene per display, combined mode, watermark opacity on Create, safety retry
+
+Three approved items:
+
+1. **Watermark opacity on Create** — per-image opacity field (default copied from Settings, editable),
+   passed through `brandToDataURL` (`opts.wmOpacity` / `wmOpacity` state). Size still in Settings.
+2. **Body-part safety handling** — `bodyPartFor` neck mapping no longer says "décolletage"; the body
+   placement now reads "modestly dressed model … shoulders/chest covered, no revealing framing" to
+   stop tripping OpenAI's filter. On a safety rejection the app shows a banner *"Blocked by the safety
+   system: <msg>"* with **Retry** (re-generates — flagged "additional cost") + Dismiss. Works for
+   single, combined, and per-item in a batch.
+3. **Distinct scene per display + two output modes** (user picks per generation when >1 display):
+   - **One analysis call returns N scene sets** (`scenes[]`, one per selected placement, each distinct)
+     — `doAnalyze` sends `displays`; `sceneSets[displayId]` feeds each image; the primary display uses
+     the editable scene fields. No extra analysis cost.
+   - **Separate** mode → N full images, each its own scene (N image calls).
+   - **Combined** mode → ONE wide image (1× cost) the model lays out as N panels; client brands **each
+     panel** (its own watermark + logo/name/code) and draws **crop borders** per panel. Caveat: borders/
+     branding sit on equal divisions as crop guides (model decides exact panel art), so cropping is
+     approximate — matches the "just cut/crop" intent. Combined uses size 1536×1024 for ≥2 panels.
+
+SW cache `jw-v810`; version 8.10.0. No migration.
+
 ## v8.9.3 — Theme-aware, colour-coordinated analysis (the right fix)
 
 Replaces v8.9.2's blind theme override. Rather than the client forcing the theme's hardcoded props

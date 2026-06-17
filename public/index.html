@@ -68,7 +68,7 @@ const DISPLAYS=[{id:"mannequin",n:"On mannequin / bust"},{id:"body",n:"On model 
 const CODEPOS=[{id:"top-right",n:"Top Right"},{id:"top-center",n:"Top Center"},{id:"top-left",n:"Top Left"},{id:"bottom-right",n:"Bottom Right"},{id:"bottom-center",n:"Bottom Center"},{id:"bottom-left",n:"Bottom Left"}];
 function bodyPartFor(type){
   type=(type||"").toLowerCase();
-  if(/neck|pendant|chain|choker|mangalsutra|haar|locket/.test(type))return "the neckline / d\u00e9colletage";
+  if(/neck|pendant|chain|choker|mangalsutra|haar|locket/.test(type))return "the base of the neck / collarbone area (modest)";
   if(/brace|bangle|kada|kangan|wrist|cuff/.test(type))return "the wrist";
   if(/ear|jhumk|stud|drop|hoop/.test(type))return "the ear";
   if(/ring|finger/.test(type))return "the hand / finger";
@@ -238,6 +238,8 @@ function App(){
   var[incLogo,setIncLogo]=useState(false);var[incName,setIncName]=useState(false);var[incTagline,setIncTagline]=useState(false);var[incWatermark,setIncWatermark]=useState(false);var[incCode,setIncCode]=useState(false);
   // v8.9.4 props toggle (default ON): governs themed props independent of theme.
   var[incProps,setIncProps]=useState(true);
+  // v8.10: one analysis -> distinct scene set per selected display; combined vs separate output; per-image watermark opacity; safety-retry.
+  var[sceneSets,setSceneSets]=useState({});var[genMode,setGenMode]=useState("separate");var[wmOpacity,setWmOpacity]=useState("");var[safetyRetry,setSafetyRetry]=useState(null);
   var togglesInit=useRef(false);
   var[jobId,setJobId]=useState(null);var[jobStatus,setJobStatus]=useState("");var[jobStart,setJobStart]=useState(0);var[prog,setProg]=useState(0);
   var[ovr,setOvr]=useState({});var[aiPlace,setAiPlace]=useState(false);
@@ -334,26 +336,34 @@ function App(){
   var isA=usr&&usr.role==="admin";
   var bsy=ph==="analyzing"||ph==="gen"||ph==="brand";
 
-  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setItems([]);setFin(null);setBatch(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);}
-  function createNew(){setImg(null);setImgF(null);setAn(null);setItems([]);setFin(null);setBatch(null);setRefImg(null);setRefName("");setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);setOvr({});if(fR.current)fR.current.value="";}
+  function upl(f){if(!f)return;setImg(URL.createObjectURL(f));setImgF(f);setAn(null);setItems([]);setFin(null);setBatch(null);setPh("idle");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);setSceneSets({});setSafetyRetry(null);}
+  function createNew(){setImg(null);setImgF(null);setAn(null);setItems([]);setFin(null);setBatch(null);setRefImg(null);setRefName("");setExt("");setPh("idle");setSts("");setErr("");setSc({d:"",b:"",p:"",m:""});setPromptText("");setPromptDirty(false);setPcode("");setGenSrc(null);setOvr({});setSceneSets({});setSafetyRetry(null);if(fR.current)fR.current.value="";}
   function pickRef(f){if(!f)return;var rd=new FileReader();rd.onload=function(){setRefImg(rd.result);setRefName(f.name||"reference");};rd.onerror=function(){setErr("Could not read the reference image");};rd.readAsDataURL(f);}
 
   function doAnalyze(){
     if(!imgF){setErr("Upload image first");return;}
-    setErr("");setPh("analyzing");setSts("Analyzing jewelry...");
+    setErr("");setSafetyRetry(null);setPh("analyzing");setSts("Analyzing jewelry...");
     var fd=new FormData();fd.append("image",imgF);
-    // Tell the analysis which theme the user picked + its look, so GPT-4o returns props/background
-    // that match the theme AND complement the product's actual metal/gem colours.
+    // Tell the analysis the theme (mood, not a fixed template) + the selected placements, so GPT-4o
+    // returns a DISTINCT scene set per placement that complements the product's actual colours.
     var styObj=STYS.filter(function(s){return s.id===sty;})[0];
+    var selDisps=disps.slice();
     fd.append("style",sty);fd.append("themeName",(styObj&&styObj.n)||sty);fd.append("themeMood",themeMood(sty));
-    fd.append("wantProps",incProps?"1":"0");
+    fd.append("wantProps",incProps?"1":"0");fd.append("displays",selDisps.join(","));
     api("/api/analyze",{method:"POST",body:fd}).then(function(d){
       var a=d.analysis;setAn(Object.assign({},a,{inputFile:d.inputFile}));
       var its=(a.items&&a.items.length)?a.items.slice():(a.type?[a.type]:[]);setItems(its);
-      // Use the AI's theme- & colour-aware scene; fall back to the theme/empty only if it returns "none"/blank.
-      // Props are governed by the Props toggle, independent of theme.
       var nz=function(s){s=(s||"").trim();return (!s||s.toLowerCase()==="none")?"":s;};
-      setSc({d:a.display||"white mannequin",b:nz(a.background)||sf(sty),p:incProps?nz(a.props):"",m:nz(a.color_mood)});
+      // Build a distinct scene set per selected display from the returned scenes[] (aligned by order).
+      var scenesArr=(a.scenes&&a.scenes.length)?a.scenes:[{background:a.background,props:a.props,color_mood:a.color_mood}];
+      var map={};
+      selDisps.forEach(function(dp,i){
+        var sset=scenesArr[i]||scenesArr[scenesArr.length-1]||{};
+        map[dp]={d:a.display||"",b:nz(sset.background)||sf(sty),p:incProps?nz(sset.props):"",m:nz(sset.color_mood)};
+      });
+      setSceneSets(map);
+      var prim=map[selDisps[0]||"mannequin"]||{d:a.display||"white mannequin",b:nz(a.background)||sf(sty),p:incProps?nz(a.props):"",m:nz(a.color_mood)};
+      setSc({d:a.display||"white mannequin",b:prim.b,p:prim.p,m:prim.m});
       setPh("scene");setSts("Review the scene, then generate.");
     }).catch(function(e){setErr(e.message);setPh("idle");});
   }
@@ -362,12 +372,14 @@ function App(){
   function buildPrompt(dispParam){
     if(!an)return "";
     var dd=dispParam||disps[0]||"mannequin";
-    var place=dd==="body"?("Show the piece being worn on "+bodyPartFor(an.type)+" of an elegant model \u2014 tasteful and natural, only the relevant body area in frame.")
+    // Each display draws from its own scene set; the primary display uses the editable scene fields.
+    var src=(dd===(disps[0]||"mannequin"))?sc:(sceneSets[dd]||sc);
+    var place=dd==="body"?("Show the piece tastefully worn on "+bodyPartFor(an.type)+" of an elegant, MODESTLY DRESSED model in a professional e-commerce catalog style \u2014 only the jewellery area in frame, shoulders and chest covered, no suggestive or revealing framing.")
       :dd==="props"?"Arrange the piece elegantly on themed props that suit the style. No mannequin or body in frame."
-      :("Present the piece on an elegant jewelry "+((sc.d&&sc.d.trim())||"bust / stand")+", styled within the themed scene described below.");
+      :("Present the piece on an elegant jewelry "+((src.d&&src.d.trim())||"bust / stand")+", styled within the themed scene described below.");
     var mz=function(s){s=(s||"").trim();return (s&&s.toLowerCase()!=="none")?s:"";};
-    var sBg=mz(sc.b)||sf(sty),sMood=mz(sc.m)||"warm, premium";
-    var sProps=incProps?(mz(sc.p)||themeProps(sty)):"";
+    var sBg=mz(src.b)||sf(sty),sMood=mz(src.m)||"warm, premium";
+    var sProps=incProps?(mz(src.p)||themeProps(sty)):"";
     var scenePart=refImg
       ?"BACKGROUND \u2014 USE THE REFERENCE: a second reference image is provided. Reproduce its background, setting, surface, colours, props and lighting mood EXACTLY as shown, and place the product naturally into that same scene. Do NOT invent a different background.\n"
       :(incProps
@@ -396,51 +408,103 @@ function App(){
       aiPlace:!!aiPlace
     };
   }
+  // OpenAI safety rejections -> offer a retry (re-generation = extra cost) instead of a dead error.
+  function isSafetyErr(m){return /safety system|safety_violation|rejected by the safety/i.test(m||"");}
+  function handleGenErr(e,retryFn){
+    if(isSafetyErr(e.message))setSafetyRetry({msg:e.message,fn:retryFn});
+    else setErr(e.message);
+    setPh("scene");
+  }
+
   function doGen(rebuild){
     if(!an){setErr("Analyze first");return;}
     var d0=disps[0]||"mannequin";
     var pr=rebuild?buildPrompt(d0):((promptText&&promptText.trim())?promptText:buildPrompt(d0));
     if(rebuild){setPromptText(pr);setPromptDirty(false);}
     var startMs=Date.now();
-    setErr("");setFin(null);setBatch(null);setPh("gen");setProg(5);setJobStatus("generating");setJobStart(startMs);setSts("Generating \u2014 "+qEta()+". Keep this screen open.");
+    setErr("");setSafetyRetry(null);setFin(null);setBatch(null);setPh("gen");setProg(5);setJobStatus("generating");setJobStart(startMs);setSts("Generating \u2014 "+qEta()+". Keep this screen open.");
     var body={prompt:pr,model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:d0,inputFile:an.inputFile,branding:brandingMeta()};
     if(refImg)body.referenceImage=refImg;
     api("/api/generate",{method:"POST",body:JSON.stringify(body)}).then(function(d){
       var url=d.b64_json?"data:image/png;base64,"+d.b64_json:d.url;
       if(!url)throw new Error("No image returned");
       setProg(96);setSts("Applying brand...");setPh("brand");setGenSrc(url);doBrand(url);
-    }).catch(function(e){setErr(e.message);setPh("scene");});
+    }).catch(function(e){handleGenErr(e,function(){setSafetyRetry(null);doGen(rebuild);});});
+  }
+
+  // Combined mode: ONE image (1x cost) laid out as N panels, branded per panel with crop borders.
+  function buildCollagePrompt(list){
+    if(!an)return "";
+    var mz=function(s){s=(s||"").trim();return (s&&s.toLowerCase()!=="none")?s:"";};
+    var cleanItems=(items||[]).map(function(x){return (x||"").trim();}).filter(Boolean);
+    var itemsPart=cleanItems.length?("The set has "+cleanItems.length+" piece"+(cleanItems.length>1?"s":"")+": "+cleanItems.map(function(x,i){return (i+1)+") "+x;}).join("; ")+". EVERY piece must appear in EACH panel, preserved exactly (a pair like earrings: show BOTH, identical).\n\n"):"";
+    var panelLines=list.map(function(dd,i){
+      var src=(dd===(disps[0]||"mannequin"))?sc:(sceneSets[dd]||sc);
+      var place=dd==="body"?("the piece tastefully worn on "+bodyPartFor(an.type)+" of a modestly dressed model (only the jewellery area, shoulders/chest covered, no revealing framing)")
+        :dd==="props"?"the piece arranged elegantly on themed props (no mannequin or body)"
+        :("the piece on an elegant jewelry "+((src.d&&src.d.trim())||"bust / stand"));
+      var bg=mz(src.b)||sf(sty);
+      return "Panel "+(i+1)+" ("+dispLabel(dd)+"): "+place+". Background: "+bg+(incProps?(". Props: "+(mz(src.p)||themeProps(sty))):". No decorative props")+". Colour mood: "+(mz(src.m)||"warm, premium")+".";
+    }).join("\n");
+    return "Using the provided product photograph as the EXACT subject, create ONE single wide marketing image made of "+list.length+" DISTINCT panels arranged left-to-right with clean even gaps between them (like a "+list.length+"-up contact sheet).\n\n"
+      +itemsPart
+      +"CRITICAL \u2014 PRESERVE THE JEWELRY EXACTLY in EVERY panel: identical design, stones, charms, chain pattern, metal and colour as the photo. Do NOT redesign, swap or invent any piece; only restage the scene around it.\n\n"
+      +"Each panel shows the SAME jewelry in a clearly DIFFERENT setting:\n"+panelLines+"\n\n"
+      +"Keep the panels visually distinct and each composition clean with space at the edges. Do NOT add any text, watermark or logo into the image."
+      +(ext?("\nExtra: "+ext):"");
+  }
+  function runCombined(list){
+    setErr("");setSafetyRetry(null);setFin(null);setBatch(null);setGenSrc(null);setPh("gen");setProg(5);setJobStatus("generating");setJobStart(Date.now());setSts("Generating one combined image \u2014 "+qEta()+". Keep this screen open.");
+    var size=list.length>=2?"1536x1024":cfg.size;
+    var body={prompt:buildCollagePrompt(list),model:cfg.model,quality:cfg.quality,size:size,analysis:an,scene:sc,style:sty,display:list.join("+"),inputFile:an.inputFile,branding:brandingMeta()};
+    if(refImg)body.referenceImage=refImg;
+    api("/api/generate",{method:"POST",body:JSON.stringify(body)}).then(function(d){
+      var url=d.b64_json?"data:image/png;base64,"+d.b64_json:d.url;if(!url)throw new Error("No image returned");
+      setProg(96);setSts("Branding each panel...");setPh("brand");setGenSrc(url);
+      return brandToDataURL(url,{panels:list.length});
+    }).then(function(fu){
+      if(!fu)return;setFin(fu);setPh("done");setSts("Ready \u2014 combined image, "+list.length+" panels");
+      api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
+    }).catch(function(e){handleGenErr(e,function(){setSafetyRetry(null);runCombined(list);});});
   }
 
   function onGenerate(){
     if(!an){setErr("Analyze first");return;}
+    setSafetyRetry(null);
     if(disps.length<=1){doGen(false);return;}
-    var n=disps.length,per=cfg.quality==="high"?"~Rs15\u201318":cfg.quality==="low"?"~Rs0.5":"~Rs4\u20135";
-    if(!confirm("You selected "+n+" options: "+disps.map(dispLabel).join(", ")+".\n\nThis generates "+n+" separate images \u2014 about "+n+"\u00d7 the time and cost (roughly "+per+" each, so ~"+n+"\u00d7 that total). The app must stay open the whole time.\n\nContinue?"))return;
+    var n=disps.length;
+    if(genMode==="combined"){
+      if(!confirm("Combined: ONE image (1\u00d7 cost) split into "+n+" panels ("+disps.map(dispLabel).join(", ")+"), each with its own branding + a crop border.\n\nContinue?"))return;
+      runCombined(disps.slice());return;
+    }
+    var per=cfg.quality==="high"?"~Rs15\u201318":cfg.quality==="low"?"~Rs0.5":"~Rs4\u20135";
+    if(!confirm("Separate: "+n+" full images ("+disps.map(dispLabel).join(", ")+") \u2014 about "+n+"\u00d7 cost/time (~"+per+" each). The app must stay open.\n\nContinue?"))return;
     runBatch(disps.slice());
   }
 
   function runBatch(list){
     var results=list.map(function(d){return {disp:d,status:"pending",fin:null,err:null};});
-    setErr("");setFin(null);setGenSrc(null);setBatch(results.slice());setPh("gen");setProg(2);
+    setErr("");setSafetyRetry(null);setFin(null);setGenSrc(null);setBatch(results.slice());setPh("gen");setProg(2);
     var N=list.length;
-    function step(i){
-      if(i>=N){setPh("done");setProg(100);setSts("Done \u2014 "+N+" images");return;}
-      var d=list[i];
-      results[i]=Object.assign({},results[i],{status:"generating"});setBatch(results.slice());
-      setProg(Math.round((i/N)*100)+3);setSts("Generating "+(i+1)+" of "+N+" \u2014 "+dispLabel(d)+"...");
-      var body={prompt:buildPrompt(d),model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:d,inputFile:an.inputFile,branding:brandingMeta()};
+    function genItem(i,advance){
+      results[i]=Object.assign({},results[i],{status:"generating",err:null});setBatch(results.slice());
+      if(advance){setProg(Math.round((i/N)*100)+3);setSts("Generating "+(i+1)+" of "+N+" \u2014 "+dispLabel(list[i])+"...");}else setSts("Retrying "+dispLabel(list[i])+"...");
+      var body={prompt:buildPrompt(list[i]),model:cfg.model,quality:cfg.quality,size:cfg.size,analysis:an,scene:sc,style:sty,display:list[i],inputFile:an.inputFile,branding:brandingMeta()};
       if(refImg)body.referenceImage=refImg;
       api("/api/generate",{method:"POST",body:JSON.stringify(body)}).then(function(dd){
         var url=dd.b64_json?"data:image/png;base64,"+dd.b64_json:dd.url;if(!url)throw new Error("No image returned");
         return brandToDataURL(url,{});
       }).then(function(fu){
-        results[i]=Object.assign({},results[i],{status:"done",fin:fu});setBatch(results.slice());
-        return api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
-      }).then(function(){step(i+1);}).catch(function(e){
-        results[i]=Object.assign({},results[i],{status:"error",err:e.message});setBatch(results.slice());step(i+1);
+        results[i]=Object.assign({},results[i],{status:"done",fin:fu,err:null});setBatch(results.slice());
+        api("/api/save-final",{method:"POST",body:JSON.stringify({imageData:fu})}).catch(function(){});
+        if(advance)step(i+1);else setPh("done");
+      }).catch(function(e){
+        results[i]=Object.assign({},results[i],{status:"error",err:e.message});setBatch(results.slice());
+        if(isSafetyErr(e.message))setSafetyRetry({msg:"Image "+(i+1)+" ("+dispLabel(list[i])+"): "+e.message,fn:function(){setSafetyRetry(null);genItem(i,false);}});
+        if(advance)step(i+1);
       });
     }
+    function step(i){if(i>=N){setPh("done");setProg(100);setSts("Done \u2014 "+N+" images");return;}genItem(i,true);}
     step(0);
   }
 
@@ -533,7 +597,7 @@ function App(){
       var uLpos=pick(opts.lpos,lpos);
       var uCode=pick(opts.pcode,pcode);
       var uCodePos=pick(opts.pcodePos,pcodePos);
-      // Which elements to include (toggles); opts can override for special cases.
+      var panels=Math.max(1,parseInt(opts.panels||1,10)||1); // combined mode draws N panels in one image
       var sLogo=!!pick(opts.incLogo,incLogo),sName=!!pick(opts.incName,incName),sTag=!!pick(opts.incTagline,incTagline),sWM=!!pick(opts.incWatermark,incWatermark),sCode=!!pick(opts.incCode,incCode);
       var pnum=function(o,c,d){var v=parseFloat(o);if(!isNaN(v))return v;v=parseFloat(c);return isNaN(v)?d:v;};
       var sizes={
@@ -542,33 +606,47 @@ function App(){
         taglinePct:pnum(opts.taglinePct!==undefined?opts.taglinePct:ovr.taglinePct,cfg.taglinePct,3),
         codePct:pnum(opts.codePct!==undefined?opts.codePct:ovr.codePct,cfg.codePct,3)
       };
-      var wmPct=pnum(cfg.watermarkPct,null,60),wmOp=pnum(cfg.watermarkOpacity,null,12);
+      var wmPct=pnum(cfg.watermarkPct,null,60);
+      var wmOp=pnum(opts.wmOpacity!==undefined?opts.wmOpacity:wmOpacity,cfg.watermarkOpacity,12); // per-image opacity override
       var c=cv.current;if(!c){reject(new Error("Canvas unavailable"));return;}
-      var ctx=c.getContext("2d");c.width=1024;c.height=1024;
+      var ctx=c.getContext("2d");
       var im=new Image();im.crossOrigin="anonymous";
       im.onload=function(){
-        ctx.clearRect(0,0,1024,1024);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(im,0,0,1024,1024);
-        var useAi=pick(opts.aiPlace,aiPlace);
+        var W=panels>1?(im.naturalWidth||1536):1024, H=panels>1?(im.naturalHeight||1024):1024;
+        c.width=W;c.height=H;
+        ctx.clearRect(0,0,W,H);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(im,0,0,W,H);
+        var useAi=panels>1?false:pick(opts.aiPlace,aiPlace); // auto-placement disabled in combined mode
         var hasBrandText=sLogo||sName||sTag;
-        if(useAi){
-          if(hasBrandText)uLpos=pickAutoPos(ctx,1024,1024);
-          sizes={logoPct:12,namePct:5,taglinePct:3,codePct:3};
-        }
         var bn=cfg.brandName||"BRAND",tg=cfg.tagline||"";
         var codeText=sCode?(uCode||"").trim():"";
-        var codePos=uCodePos||cfg.codePos||"top-right";
-        if(useAi&&codeText)codePos=pickCodePos(ctx,1024,1024,uLpos);
-        function finish(logoImg,wmImg){
+        var _logoImg=null,_wmImg=null;
+        // Paint all branding (watermark + logo/name/tagline + code) into one cell (origin ox,oy, size cw,ch).
+        function paintCell(ox,oy,cw,ch){
+          var lp=uLpos,cp=uCodePos||cfg.codePos||"top-right",sz=sizes;
+          if(useAi){if(hasBrandText)lp=pickAutoPos(ctx,cw,ch);sz={logoPct:12,namePct:5,taglinePct:3,codePct:3};if(codeText)cp=pickCodePos(ctx,cw,ch,lp);}
+          ctx.save();ctx.translate(ox,oy);ctx.beginPath();ctx.rect(0,0,cw,ch);ctx.clip();
+          if(_wmImg)drawWatermark(ctx,_wmImg,cw,ch,wmPct,wmOp);
+          if(hasBrandText)drawText(ctx,bn,tg,lp,_logoImg,cw,ch,sz,sLogo,sName,sTag);
+          if(codeText)drawCode(ctx,codeText,cp,cw,ch,sz);
+          ctx.restore();
+        }
+        function finish(){
           ensureFonts().then(function(){
-            if(wmImg)drawWatermark(ctx,wmImg,1024,1024,wmPct,wmOp);
-            if(hasBrandText)drawText(ctx,bn,tg,uLpos,logoImg,1024,1024,sizes,sLogo,sName,sTag);
-            if(codeText)drawCode(ctx,codeText,codePos,1024,1024,sizes);
+            if(panels>1){
+              var cw=Math.floor(W/panels);
+              for(var i=0;i<panels;i++){paintCell(i*cw,0,(i===panels-1?W-i*cw:cw),H);}
+              // crop-guide borders around each panel
+              var lw=Math.max(2,Math.round(W*0.0035));ctx.save();ctx.strokeStyle="rgba(120,120,120,0.85)";ctx.lineWidth=lw;
+              for(var b=0;b<panels;b++){var bx=b*cw,bw=(b===panels-1?W-bx:cw);ctx.strokeRect(bx+lw/2,lw/2,bw-lw,H-lw);}
+              ctx.restore();
+            }else{paintCell(0,0,W,H);}
             resolve(c.toDataURL("image/png"));
           });
         }
         function afterLogo(logoImg){
-          if(sWM&&cfg.watermarkBase64){var wi=new Image();wi.onload=function(){finish(logoImg,wi);};wi.onerror=function(){finish(logoImg,null);};wi.src=cfg.watermarkBase64;}
-          else finish(logoImg,null);
+          _logoImg=logoImg;
+          if(sWM&&cfg.watermarkBase64){var wi=new Image();wi.onload=function(){_wmImg=wi;finish();};wi.onerror=function(){_wmImg=null;finish();};wi.src=cfg.watermarkBase64;}
+          else finish();
         }
         if(sLogo&&cfg.logoBase64){var li=new Image();li.onload=function(){afterLogo(li);};li.onerror=function(){afterLogo(null);};li.src=cfg.logoBase64;}
         else afterLogo(null);
@@ -706,6 +784,14 @@ function App(){
     h("div",{style:{maxWidth:980,margin:"0 auto",padding:"14px"}},
       err?h("div",{style:{padding:"8px 12px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.25)",borderRadius:8,color:t.er,fontSize:12,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}},h("span",null,"\u26A0 "+err),h("button",{onClick:function(){setErr("");},style:{background:"none",border:"none",color:t.er,cursor:"pointer",fontSize:14,lineHeight:1}},"\u00D7")):null,
       msg?h("div",{style:{padding:"8px 12px",background:"rgba(40,160,40,0.1)",border:"1px solid rgba(40,160,40,0.25)",borderRadius:8,color:t.ok,fontSize:12,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}},h("span",null,msg),h("button",{onClick:function(){setMsg("");},style:{background:"none",border:"none",color:t.ok,cursor:"pointer",fontSize:14,lineHeight:1}},"\u00D7")):null,
+      safetyRetry?h("div",{style:{padding:"10px 12px",background:dk?"rgba(220,140,40,0.12)":"rgba(200,120,30,0.1)",border:"1px solid rgba(200,120,30,0.5)",borderRadius:8,fontSize:12,marginBottom:10}},
+        h("div",{style:{color:t.er,marginBottom:6}},"\u26A0 Blocked by the OpenAI safety system: "+safetyRetry.msg),
+        h("div",{style:{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}},
+          h("button",{onClick:function(){var fn=safetyRetry.fn;setSafetyRetry(null);if(fn)fn();},style:Object.assign({},sb(true),{padding:"6px 14px",fontSize:12})},"Retry"),
+          h("button",{onClick:function(){setSafetyRetry(null);},style:Object.assign({},sb(false),{padding:"6px 14px",fontSize:12})},"Dismiss"),
+          h("span",{style:{fontSize:10,color:t.t2}},"Retry generates again \u2014 this will cause additional cost.")
+        )
+      ):null,
       resetInfo?h("div",{style:{padding:"10px 12px",background:dk?"rgba(200,169,81,0.12)":"rgba(176,140,42,0.1)",border:"1px solid "+t.g,borderRadius:8,fontSize:13,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}},
         h("span",null,"Temp password for ",h("b",null,resetInfo.username),": ",h("code",{style:{background:dk?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)",padding:"2px 8px",borderRadius:5,fontSize:14,letterSpacing:1}},resetInfo.pw),"  \u2014 share it; they must change it at next login."),
         h("span",{style:{display:"flex",gap:6}},h("button",{onClick:copyReset,style:mini},"Copy"),h("button",{onClick:function(){setResetInfo(null);},style:mini},"Dismiss"))
@@ -742,6 +828,11 @@ function App(){
               ),
               (incLogo&&!cfg.logoBase64)?h("div",{style:{fontSize:9,color:t.er,marginTop:5}},"\u26a0 No logo uploaded yet \u2014 add one in Settings."):null,
               (incWatermark&&!cfg.watermarkBase64)?h("div",{style:{fontSize:9,color:t.er,marginTop:5}},"\u26a0 No watermark image uploaded \u2014 ask an admin to add one in Settings."):null,
+              incWatermark?h("div",{style:{marginTop:6,display:"flex",alignItems:"center",gap:8}},
+                h("label",{style:Object.assign({},sl,{fontSize:9,margin:0})},"Watermark opacity %"),
+                h("input",{type:"number",min:"1",max:"100",value:wmOpacity!==""?wmOpacity:((cfg.watermarkOpacity!=null&&cfg.watermarkOpacity!=="")?cfg.watermarkOpacity:"12"),onChange:function(e){setWmOpacity(e.target.value);},style:Object.assign({},si,{fontSize:12,padding:"5px 8px",width:90})}),
+                h("span",{style:{fontSize:9,color:t.t2}},"default from Settings; change per image")
+              ):null,
               (incLogo||incName||incTagline)?h("div",{style:{fontSize:9,color:t.t2,marginTop:5}},"Logo / name / tagline share the position below. Watermark is always centered & faint."):null
             ),
             h("div",{className:"g2",style:{marginTop:10}},
@@ -753,7 +844,15 @@ function App(){
                     setDisps(function(p){var has=p.indexOf(d.id)>-1;if(has){if(p.length===1)return p;return p.filter(function(x){return x!==d.id;});}return p.concat([d.id]);});
                   },style:{textAlign:"left",fontSize:12,padding:"7px 9px",borderRadius:7,cursor:"pointer",border:"1px solid "+(on?t.g:t.bd),background:on?(dk?"rgba(200,169,81,0.14)":"rgba(176,140,42,0.1)"):"transparent",color:on?t.g:t.tx}},(on?"\u2611 ":"\u2610 ")+d.n);
                 })),
-                disps.length>1?h("div",{style:{fontSize:9,color:t.t2,marginTop:3}},disps.length+" selected \u2014 makes "+disps.length+" images"):null
+                disps.length>1?h("div",{style:{marginTop:5}},
+                  h("div",{style:{display:"flex",gap:4}},
+                    [["separate","Separate ("+disps.length+" imgs)"],["combined","Combined (1 img)"]].map(function(m){
+                      var on=genMode===m[0];
+                      return h("button",{key:m[0],onClick:function(){setGenMode(m[0]);},style:{flex:1,fontSize:10,padding:"5px 6px",borderRadius:6,cursor:"pointer",border:"1px solid "+(on?t.g:t.bd),background:on?(dk?"rgba(200,169,81,0.14)":"rgba(176,140,42,0.1)"):"transparent",color:on?t.g:t.tx}},m[1]);
+                    })
+                  ),
+                  h("div",{style:{fontSize:9,color:t.t2,marginTop:3}},genMode==="combined"?"One image, "+disps.length+" panels (each branded + crop border) \u2014 1\u00d7 cost.":disps.length+" separate full images \u2014 ~"+disps.length+"\u00d7 cost.")
+                ):null
               ),
               h("div",{style:aiPlace?{opacity:0.4}:null},h("label",{style:sl},"Logo / name / tagline position"),h("select",{value:lpos,disabled:aiPlace,onChange:function(e){setLpos(e.target.value);},style:si},POSS.map(function(p){return h("option",{key:p.id,value:p.id},p.n);})))
             ),
@@ -821,7 +920,7 @@ function App(){
             h("div",{style:{fontSize:10,color:t.t2,marginTop:4}},"This exact text is sent to the AI. Edit it freely, or copy it to use in another tool.")
           ):null,
           img&&ph==="idle"?h("button",{onClick:doAnalyze,style:Object.assign({},sb(true),{width:"100%",marginTop:10,padding:13,fontSize:14})},"\u2728 Create Marketing Image"):null,
-          ph==="scene"?h("button",{onClick:onGenerate,style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},disps.length>1?("\uD83C\uDFA8 Generate "+disps.length+" images \u2014 ~"+disps.length+"\u00d7 cost/time"):("\uD83C\uDFA8 Generate \u2014 "+(cfg.quality==="high"?"premium, ~60\u201390s":cfg.quality==="low"?"draft, ~10\u201320s":"standard, ~30\u201360s"))):null,
+          ph==="scene"?h("button",{onClick:onGenerate,style:Object.assign({},sb(true),{width:"100%",marginTop:8,padding:13,fontSize:14})},disps.length>1?(genMode==="combined"?("\uD83C\uDFA8 Generate 1 combined image ("+disps.length+" panels)"):("\uD83C\uDFA8 Generate "+disps.length+" images \u2014 ~"+disps.length+"\u00d7 cost/time")):("\uD83C\uDFA8 Generate \u2014 "+(cfg.quality==="high"?"premium, ~60\u201390s":cfg.quality==="low"?"draft, ~10\u201320s":"standard, ~30\u201360s"))):null,
           ph==="done"?h("div",{style:{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}},
             h("button",{onClick:createNew,style:Object.assign({},sb(false),{flex:"1 1 45%"})},"\uD83D\uDCC4 Create New"),
             h("button",{onClick:function(){if(batch)runBatch(disps.slice());else doGen(true);},style:Object.assign({},sb(false),{flex:"1 1 45%"})},batch?"\uD83D\uDD04 Regenerate all":"\uD83D\uDD04 Regenerate with same input"),
